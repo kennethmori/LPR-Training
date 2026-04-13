@@ -59,10 +59,10 @@ YOLO detector dataset snapshot:
 
 OCR crop dataset snapshot:
 
-- `data/ocr/train_crops` with `334` crops and [train_labels.csv](C:\4 BSCS\4 bscs 2nd sem\IntelligentSystems\plate\data\ocr\train_labels.csv)
-- `data/ocr/val_crops` with `105` crops and [val_labels.csv](C:\4 BSCS\4 bscs 2nd sem\IntelligentSystems\plate\data\ocr\val_labels.csv)
-- `data/ocr/test_crops` with `97` crops and [test_labels.csv](C:\4 BSCS\4 bscs 2nd sem\IntelligentSystems\plate\data\ocr\test_labels.csv)
-- aggregated OCR evaluation set in [all_crops](C:\4 BSCS\4 bscs 2nd sem\IntelligentSystems\plate\data\ocr\all_crops) with [all_labels.csv](C:\4 BSCS\4 bscs 2nd sem\IntelligentSystems\plate\data\ocr\all_labels.csv) for `536` total crops
+- `data/ocr/train_crops` with `334` crops and `data/ocr/train_labels.csv`
+- `data/ocr/val_crops` with `105` crops and `data/ocr/val_labels.csv`
+- `data/ocr/test_crops` with `97` crops and `data/ocr/test_labels.csv`
+- aggregated OCR evaluation set in `data/ocr/all_crops` with `data/ocr/all_labels.csv` for `536` total crops
 
 Important note:
 

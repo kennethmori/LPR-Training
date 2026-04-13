@@ -68,7 +68,7 @@ This order keeps the model quality questions separate from the application workf
 
 This phase is about proving that the recognition pipeline is good enough to build on.
 
-For the detailed working plan, see [phase-1-plan.md](C:/4%20BSCS/4%20bscs%202nd%20sem/IntelligentSystems/plate/docs/phase-1-plan.md).
+For the detailed working plan, see [phase-1-plan.md](phase-1-plan.md).
 
 ### Detector Work
 

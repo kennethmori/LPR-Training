@@ -10,7 +10,7 @@ This project is a two-stage license plate recognition system:
 
 The live application is served through FastAPI with a simple Jinja2 and vanilla JavaScript frontend.
 
-At the moment, the runtime architecture covers recognition only. The planned campus deployment adds an entry and exit session layer on top of recognition events. That future direction is documented in [session-flow.md](C:/4%20BSCS/4%20bscs%202nd%20sem/IntelligentSystems/plate/docs/session-flow.md).
+At the moment, the runtime architecture covers recognition only. The planned campus deployment adds an entry and exit session layer on top of recognition events. That future direction is documented in [session-flow.md](session-flow.md).
 
 ## Main Runtime Flow
 
