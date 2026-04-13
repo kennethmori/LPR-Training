@@ -1,0 +1,41 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local datasets and other heavy/generated project artifacts
+data/**
+outputs/**
+
+# Keep empty output folders in the repo if needed
+!outputs/
+!outputs/annotated_frames/
+!outputs/plate_crops/
+!outputs/demo_logs/
+!outputs/metrics/
+!outputs/failures/
+
+!outputs/annotated_frames/.gitkeep
+!outputs/plate_crops/.gitkeep
+!outputs/demo_logs/.gitkeep
+!outputs/metrics/.gitkeep
+!outputs/failures/.gitkeep
+
+# Model weights and exports
+models/detector/*.pt
+models/exports/**
+*.onnx
+*.engine
+*.torchscript
+
+# OS/editor clutter
+.DS_Store
+Thumbs.db

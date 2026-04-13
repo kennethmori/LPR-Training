@@ -1,0 +1,223 @@
+:root {
+    --usm-blue: #0f3f78;
+    --usm-blue-deep: #0a274c;
+    --usm-green: #2f6f4f;
+    --paper: #f4f7fb;
+    --ink: #142235;
+    --muted: #6b7788;
+    --line: #d7dfeb;
+    --card: rgba(255, 255, 255, 0.92);
+    --shadow: 0 18px 45px rgba(11, 31, 58, 0.12);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    color: var(--ink);
+    background:
+        radial-gradient(circle at top left, rgba(47, 111, 79, 0.09), transparent 32%),
+        linear-gradient(180deg, #edf3fa 0%, #f9fbfd 45%, #eef4f9 100%);
+    min-height: 100vh;
+}
+
+.page-shell {
+    width: min(1360px, calc(100% - 32px));
+    margin: 24px auto 32px;
+}
+
+.hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    background: linear-gradient(135deg, var(--usm-blue-deep), var(--usm-blue));
+    color: white;
+    border-radius: 24px;
+    padding: 28px 32px;
+    box-shadow: var(--shadow);
+}
+
+.eyebrow {
+    margin: 0 0 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    opacity: 0.85;
+}
+
+.hero h1 {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.08;
+}
+
+.subtitle {
+    margin: 10px 0 0;
+    max-width: 740px;
+    font-size: 1.02rem;
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.hero-badge {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 290px minmax(0, 1fr) 320px;
+    gap: 18px;
+    margin-top: 20px;
+}
+
+.panel {
+    background: var(--card);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(215, 223, 235, 0.9);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+}
+
+.panel h2,
+.panel h3 {
+    margin-top: 0;
+}
+
+.controls form,
+.status-block,
+.button-row {
+    margin-bottom: 18px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+input[type="file"] {
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+button {
+    width: 100%;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: var(--usm-blue);
+    color: white;
+    font-size: 0.96rem;
+    cursor: pointer;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+button:hover {
+    transform: translateY(-1px);
+    opacity: 0.96;
+}
+
+button.secondary {
+    background: var(--usm-green);
+}
+
+.button-row {
+    display: grid;
+    gap: 10px;
+}
+
+.viewer-frame,
+.plate-preview {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(15, 63, 120, 0.03), rgba(255, 255, 255, 0.94));
+    min-height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.viewer-frame img,
+.plate-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.result-grid,
+.status-block dl {
+    display: grid;
+    gap: 12px;
+}
+
+.result-grid div,
+.status-block dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+}
+
+dt {
+    font-weight: 700;
+}
+
+dd {
+    margin: 0;
+    text-align: right;
+    color: var(--muted);
+}
+
+#plateText {
+    font-size: 1.3rem;
+    color: var(--usm-blue-deep);
+    letter-spacing: 0.08em;
+}
+
+.log-panel {
+    margin-top: 18px;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.log-header button {
+    width: auto;
+}
+
+pre {
+    margin: 0;
+    padding: 16px;
+    border-radius: 14px;
+    background: #0d1f37;
+    color: #e5eef8;
+    overflow: auto;
+    min-height: 180px;
+}
+
+@media (max-width: 1100px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .viewer-frame,
+    .plate-preview {
+        min-height: 280px;
+    }
+}

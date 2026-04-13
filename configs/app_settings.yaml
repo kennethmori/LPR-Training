@@ -1,0 +1,40 @@
+app:
+  title: USM License Plate Recognition System
+  subtitle: Two-Stage YOLO + OCR Prototype
+  university: University of Southern Mindanao
+  debug: true
+
+paths:
+  detector_weights: models/detector/best.pt
+  annotated_output_dir: outputs/annotated_frames
+  crop_output_dir: outputs/plate_crops
+  event_log_path: outputs/demo_logs/events.jsonl
+
+detector:
+  confidence_threshold: 0.3
+  iou_threshold: 0.5
+  padding_ratio: 0.05
+  max_detections: 5
+
+ocr:
+  preferred_engine: paddleocr
+  fallback_engine: easyocr
+  min_confidence: 0.3
+  resize_width: 320
+
+postprocess:
+  uppercase: true
+  strip_non_alnum: true
+  collapse_spaces: true
+  apply_soft_rules: false
+
+stabilization:
+  history_size: 5
+  min_repetitions: 2
+  process_every_n_frames: 3
+
+camera:
+  source_index: 0
+  width: 1280
+  height: 720
+  fps_sleep_seconds: 0.03

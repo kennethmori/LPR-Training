@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_title }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">{{ university }}</p>
+                <h1>{{ app_title }}</h1>
+                <p class="subtitle">{{ subtitle }}</p>
+            </div>
+            <div class="hero-badge" id="statusBadge">IDLE</div>
+        </header>
+
+        <main class="layout">
+            <section class="panel controls">
+                <h2>Controls</h2>
+                <form id="uploadForm">
+                    <label for="imageInput">Upload Image</label>
+                    <input id="imageInput" name="file" type="file" accept="image/*" required>
+                    <button type="submit">Run Image Inference</button>
+                </form>
+
+                <div class="button-row">
+                    <button id="startCameraBtn" type="button">Start Camera</button>
+                    <button id="stopCameraBtn" type="button" class="secondary">Stop Camera</button>
+                </div>
+
+                <div class="status-block">
+                    <h3>System Status</h3>
+                    <dl>
+                        <div><dt>Detector</dt><dd id="detectorStatus">Checking...</dd></div>
+                        <div><dt>OCR</dt><dd id="ocrStatus">Checking...</dd></div>
+                        <div><dt>Camera</dt><dd id="cameraStatus">Idle</dd></div>
+                    </dl>
+                </div>
+            </section>
+
+            <section class="panel viewer">
+                <h2>Source View</h2>
+                <div class="viewer-frame">
+                    <img id="previewImage" alt="Preview output" />
+                    <img id="cameraStream" alt="Camera stream" src="/stream" hidden />
+                </div>
+            </section>
+
+            <section class="panel results">
+                <h2>Recognition Result</h2>
+                <div class="plate-preview">
+                    <img id="cropPreview" alt="Detected plate crop" />
+                </div>
+                <dl class="result-grid">
+                    <div><dt>Recognized Plate</dt><dd id="plateText">N/A</dd></div>
+                    <div><dt>Detection Confidence</dt><dd id="detConfidence">N/A</dd></div>
+                    <div><dt>OCR Confidence</dt><dd id="ocrConfidence">N/A</dd></div>
+                    <div><dt>Detector Mode</dt><dd id="detectorMode">N/A</dd></div>
+                    <div><dt>OCR Engine</dt><dd id="ocrMode">N/A</dd></div>
+                    <div><dt>Timestamp</dt><dd id="resultTime">N/A</dd></div>
+                </dl>
+            </section>
+        </main>
+
+        <section class="panel log-panel">
+            <div class="log-header">
+                <h2>Latest Result Snapshot</h2>
+                <button id="refreshStatusBtn" type="button" class="secondary">Refresh</button>
+            </div>
+            <pre id="resultJson">No result yet.</pre>
+        </section>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

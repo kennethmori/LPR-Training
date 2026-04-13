@@ -1,0 +1,10 @@
+# Local YOLO detector dataset config.
+# Training, validation, and test images live under `data/images`.
+
+path: ../data
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: plate_number
