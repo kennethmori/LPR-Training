@@ -30,6 +30,19 @@ class PlateTextPostProcessor:
         if self.settings.get("strip_non_alnum", True):
             cleaned = re.sub(r"[^A-Z0-9]", "", cleaned)
 
+        min_length = int(self.settings.get("min_length", 0) or 0)
+        max_length = int(self.settings.get("max_length", 0) or 0)
+        if min_length and len(cleaned) < min_length:
+            return ""
+        if max_length and len(cleaned) > max_length:
+            return ""
+
+        if self.settings.get("require_letter_digit_mix", False):
+            has_letter = any(character.isalpha() for character in cleaned)
+            has_digit = any(character.isdigit() for character in cleaned)
+            if not (has_letter and has_digit):
+                return ""
+
         if self.settings.get("apply_soft_rules") and self.rules.get("enabled"):
             substitutions = self.rules.get("substitutions", {})
             for source, target in substitutions.items():

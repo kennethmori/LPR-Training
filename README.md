@@ -133,5 +133,11 @@ python scripts/train_detector.py --data configs/detector_data.yaml --model yolo2
 - Detection labels alone are not enough to claim recognition performance.
 - OCR evaluation requires cropped plate images with true text labels.
 - The current OCR setup supports evaluation directly from the prepared crop folders and CSV truth files even without training a custom OCR recognizer.
+- Run aggregated OCR evaluation with:
+
+```bash
+python scripts/run_ocr_evaluation.py data/ocr/all_crops data/ocr/all_labels.csv
+```
+
 - Avoid random image-only splitting when the same plate appears across nearby frames.
 - Treat Colab runtime metrics and local CPU runtime metrics as separate results.

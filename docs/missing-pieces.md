@@ -2,138 +2,65 @@
 
 ## Purpose
 
-This document tracks the major project pieces that are still missing relative to the target campus entry and exit system.
+This document tracks what is still missing after the current dual-camera and session-tracking implementation.
 
-The current repository already performs plate detection and OCR. The remaining work is mostly about turning recognition into a reliable operational system with sessions, persistence, and monitoring.
+The repository now includes:
 
-## Highest-Priority Missing Pieces
+- role-aware camera services (`entry` and `exit`)
+- session lifecycle handling (`open`, `close`, unmatched exits)
+- SQLite-backed persistence for events and sessions
+- UI/API surfaces for active sessions, history, recent events, and unmatched exits
 
-These are the most important missing parts for the next implementation phase:
+## Remaining Gaps
 
-1. Dual-camera entry and exit architecture
-2. Session service for opening and closing vehicle visits
-3. Durable storage for session records
-4. Duplicate-prevention and plate-matching rules
-5. UI and API support for active and completed sessions
+### 1. Automated Testing
 
-## Core Feature Gaps
-
-### Dual-Camera Support
-
-The current live system is built around a single camera source.
+There is still no formal automated test suite.
 
 Missing work:
 
-- separate `entry` and `exit` camera roles
-- camera-specific configuration
-- support for running or monitoring both streams together
+- unit tests for `SessionService` decision rules
+- storage tests for CRUD and moderation flows
+- API tests for camera/session/event endpoints
 
-### Session Tracking
+### 2. API Contract Strictness
 
-The repo does not yet create vehicle sessions.
-
-Missing work:
-
-- open a session when a stable plate is recognized at entry
-- close the matching open session when the same plate is recognized at exit
-- track session status such as `open` and `closed`
-
-### Persistent Storage
-
-There is no durable session database yet.
+Pydantic schemas exist, but route handlers still mostly build plain dictionaries.
 
 Missing work:
 
-- store active and completed sessions
-- store timestamps and camera roles
-- preserve records across app restarts
+- enforce schema-first serialization on all route responses
+- add stronger response validation in integration tests
 
-Recommended first step:
+### 3. Database Lifecycle Management
 
-- SQLite
+SQLite schema initialization is currently code-driven and immediate.
 
-## Recognition Pipeline Gaps
+Missing work:
 
-The recognition layer exists, but it still has important operational limitations.
+- schema versioning/migrations for future changes
+- backup/retention strategy for long-running deployments
+
+### 4. Operational Hardening
+
+Core behavior is present, but production-style safeguards can still improve.
 
 Missing or incomplete work:
 
-- support beyond the single highest-confidence detection per frame
-- cooldown rules for repeated detections of the same vehicle
-- handling for unmatched exit events
-- handling for repeated entries or OCR misreads
-- stronger reliability under low light, motion blur, and angled plates
+- richer auth/authorization if deployed beyond local operator use
+- clearer moderation/audit workflows for reviewed or corrected events
+- deployment runbooks for real two-camera campus environments
 
-The current stabilization service helps reduce OCR flicker, but it is not a session manager.
+### 5. Recognition Quality Expansion
 
-## Backend and API Gaps
-
-The backend still needs a session-oriented layer on top of recognition.
-
-Missing work:
-
-- `session_service.py` or equivalent
-- a persistence layer for session records
-- routes for active sessions
-- routes for completed sessions
-- routes for recent entry and exit events
-- clearer typed response models in the API layer
-
-## UI Gaps
-
-The current UI is a recognition dashboard, not yet a campus traffic or guardhouse dashboard.
-
-Missing work:
-
-- side-by-side entry and exit camera feeds
-- active vehicles currently inside campus
-- completed visit history
-- unmatched or suspicious events
-- possible manual correction or override actions
-
-## Data and Model Gaps
-
-The app architecture is only part of the project. Model quality still matters.
+The architecture supports sessions, but recognition quality is still model-dependent.
 
 Missing or ongoing work:
 
-- strong detector weights in `models/detector/best.pt`
-- OCR evaluation on actual campus plate samples
-- better coverage for difficult image conditions
-- a more unified reporting workflow for detector, OCR, and end-to-end metrics
-
-## Engineering Gaps
-
-There are also software engineering tasks still missing before this becomes a more complete system.
-
-Missing work:
-
-- automated tests
-- database schema management or migrations
-- a deployment approach for a real two-camera setup
-- user roles, admin review, or audit trail if the system becomes operational
-
-## Practical Build Order
-
-Recommended order for the next stage:
-
-1. Add camera roles and dual-camera support.
-2. Add a session service.
-3. Add SQLite-backed persistence.
-4. Add duplicate-prevention and matching rules.
-5. Add API endpoints for sessions and events.
-6. Update the frontend for entry, exit, and session monitoring.
-7. Add tests and verification workflows.
+- better detector/OCR performance in low-light and motion blur
+- optional multi-detection handling beyond single best box per frame
+- continued dataset curation for difficult plate cases
 
 ## Summary
 
-The current project already recognizes plate numbers.
-
-What is still missing is the system layer that answers questions like:
-
-- who entered
-- who has not exited yet
-- when a vehicle left
-- whether an exit matches an earlier entry
-
-That next layer is what turns this from a recognition prototype into a usable campus vehicle monitoring system.
+The platform has moved past prototype-only recognition and now includes operational session tracking. The main missing pieces are test coverage, stricter API contracts, and longer-term operational maturity.

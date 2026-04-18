@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_title }} - Settings</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="page-shell settings-page-shell">
+        <header class="header" aria-label="Settings Header">
+            <div>
+                <p class="header-eyebrow">{{ university }}</p>
+                <h1>Application Settings</h1>
+                <p class="header-subtitle">Configure camera inputs, recognition rules, and detector runtime for the recognition pipeline.</p>
+            </div>
+            <div class="header-meta">
+                <p class="header-note">Configuration workspace</p>
+                <div class="header-actions">
+                    <a href="/" class="header-settings-btn badge" aria-label="Back to dashboard">
+                        Back to Dashboard
+                    </a>
+                    <span class="badge" id="settingsStateBadge">CONFIG</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="settings-page-main">
+            <section class="panel settings-panel settings-panel-page" aria-label="Application Settings">
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Camera Sources</h2>
+                        <p class="helper-copy settings-copy">Set camera URLs here. Saved values are reused when the app restarts.</p>
+
+                        <label for="entryCameraUrl">Entry Camera URL</label>
+                        <input id="entryCameraUrl" name="entry_camera_url" type="url" placeholder="http://192.168.0.251:4747/video">
+
+                        <label for="exitCameraUrl">Exit Camera URL</label>
+                        <input id="exitCameraUrl" name="exit_camera_url" type="url" placeholder="Optional exit camera stream">
+
+                        <div class="settings-actions">
+                            <button id="saveCameraSettingsBtn" type="button" class="btn-secondary">Save Camera Settings</button>
+                            <span class="settings-updated" id="cameraSettingsUpdatedAt">Last updated: —</span>
+                        </div>
+
+                        <p class="helper-copy" id="cameraSettingsNote">No settings loaded yet.</p>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Current Sources</h2>
+
+                        <div class="data-row">
+                            <span class="data-label">Entry Source</span>
+                            <span class="data-value" id="settingsEntrySource">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Exit Source</span>
+                            <span class="data-value" id="settingsExitSource">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Fallback Source</span>
+                            <span class="data-value" id="fallbackCameraSource">—</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Recognition Acceptance</h2>
+                        <p class="helper-copy settings-copy">Lower these to accept weaker reads, or raise them to be stricter.</p>
+
+                        <label for="minDetectorConfidence">Min Detector Confidence</label>
+                        <input id="minDetectorConfidence" name="min_detector_confidence" type="number" min="0" max="1" step="0.01" placeholder="0.50">
+
+                        <label for="minOcrConfidence">Min OCR Confidence</label>
+                        <input id="minOcrConfidence" name="min_ocr_confidence" type="number" min="0" max="1" step="0.01" placeholder="0.90">
+
+                        <label for="minStableOccurrences">Min Stable Repetitions</label>
+                        <input id="minStableOccurrences" name="min_stable_occurrences" type="number" min="1" step="1" placeholder="3">
+
+                        <label for="ocrCpuThreads">OCR CPU Cores</label>
+                        <input id="ocrCpuThreads" name="ocr_cpu_threads" type="number" min="1" step="1" placeholder="8">
+
+                        <div class="settings-actions">
+                            <button id="saveRecognitionSettingsBtn" type="button" class="btn-secondary">Save Recognition Settings</button>
+                            <span class="settings-updated" id="recognitionSettingsUpdatedAt">Last updated: —</span>
+                        </div>
+
+                        <p class="helper-copy" id="recognitionSettingsNote">No recognition settings loaded yet.</p>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Current Acceptance Rules</h2>
+
+                        <div class="data-row">
+                            <span class="data-label">Detector Min</span>
+                            <span class="data-value" id="settingsDetectorThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR Min</span>
+                            <span class="data-value" id="settingsOcrThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Stable Repetitions</span>
+                            <span class="data-value" id="settingsStableOccurrences">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR CPU Cores</span>
+                            <span class="data-value" id="settingsOcrCpuThreads">—</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Detector Runtime</h2>
+                        <p class="helper-copy settings-copy">Switch between the current Ultralytics detector and an ONNX Runtime export.</p>
+
+                        <label for="detectorBackend">Detector Backend</label>
+                        <select id="detectorBackend" name="backend">
+                            <option value="ultralytics">Ultralytics (.pt)</option>
+                            <option value="onnxruntime">ONNX Runtime (.onnx)</option>
+                        </select>
+
+                        <label for="detectorOnnxPath">ONNX Model Path</label>
+                        <input id="detectorOnnxPath" name="onnx_weights_path" type="text" placeholder="outputs/detector/best.onnx">
+
+                        <div class="settings-actions">
+                            <button id="saveDetectorRuntimeBtn" type="button" class="btn-secondary">Save Detector Runtime</button>
+                            <span class="settings-updated" id="detectorRuntimeUpdatedAt">Last updated: —</span>
+                        </div>
+
+                        <p class="helper-copy" id="detectorRuntimeNote">No detector runtime settings loaded yet.</p>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="panel-heading panel-heading--flush">Current Detector Runtime</h2>
+
+                        <div class="data-row">
+                            <span class="data-label">Selected Backend</span>
+                            <span class="data-value" id="settingsDetectorBackend">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">ONNX Path</span>
+                            <span class="data-value" id="settingsDetectorOnnxPath">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Runtime Mode</span>
+                            <span class="data-value" id="settingsDetectorMode">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Ready</span>
+                            <span class="data-value" id="settingsDetectorReady">—</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/settings.js"></script>
+</body>
+</html>

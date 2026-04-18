@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 
 
@@ -13,9 +14,26 @@ class PlateDetector:
         self.model = None
         self.mode = "unavailable"
         self.ready = False
+        self.backend = "ultralytics"
+        self.onnx_input_name: str | None = None
+        self.onnx_output_names: list[str] | None = None
         self._load()
 
     def _load(self) -> None:
+        backend = self._resolve_backend()
+        self.backend = backend
+        if backend == "onnxruntime":
+            self._load_onnxruntime()
+            return
+        self._load_ultralytics()
+
+    def _resolve_backend(self) -> str:
+        backend = str(self.settings.get("backend", "ultralytics") or "ultralytics").strip().lower()
+        if backend in {"onnx", "onnxruntime", "ort"}:
+            return "onnxruntime"
+        return "ultralytics"
+
+    def _load_ultralytics(self) -> None:
         if not self.weights_path.exists():
             self.mode = "missing_weights"
             return
@@ -35,15 +53,91 @@ class PlateDetector:
             self.mode = "load_failed"
             self.ready = False
 
+    def _load_onnxruntime(self) -> None:
+        onnx_path = self._onnx_weights_path()
+        if not onnx_path.exists():
+            self.mode = "missing_onnx_weights"
+            self.ready = False
+            return
+
+        try:
+            import onnxruntime as ort
+        except Exception:
+            self.mode = "onnxruntime_not_installed"
+            self.ready = False
+            return
+
+        try:
+            session_options = ort.SessionOptions()
+            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            session = ort.InferenceSession(
+                str(onnx_path),
+                sess_options=session_options,
+                providers=self._resolve_onnx_providers(ort),
+            )
+            inputs = session.get_inputs()
+            if not inputs:
+                raise RuntimeError("onnx_input_missing")
+
+            self.model = session
+            self.onnx_input_name = inputs[0].name
+            self.onnx_output_names = [output.name for output in session.get_outputs()]
+            self.mode = f"onnxruntime:{onnx_path.name}"
+            self.ready = True
+        except Exception:
+            self.model = None
+            self.onnx_input_name = None
+            self.onnx_output_names = None
+            self.mode = "load_failed"
+            self.ready = False
+
+    def _resolve_onnx_providers(self, ort: Any) -> list[str]:
+        available = list(ort.get_available_providers())
+        configured = self.settings.get("onnx_execution_providers", "auto")
+
+        if isinstance(configured, list):
+            candidates = [str(item).strip() for item in configured if str(item).strip()]
+        else:
+            raw = str(configured or "auto").strip()
+            if not raw or raw.lower() == "auto":
+                candidates = [
+                    "TensorrtExecutionProvider",
+                    "CUDAExecutionProvider",
+                    "DmlExecutionProvider",
+                    "CPUExecutionProvider",
+                ]
+            else:
+                candidates = [raw]
+
+        providers = [provider for provider in candidates if provider in available]
+        if not providers and "CPUExecutionProvider" in available:
+            providers = ["CPUExecutionProvider"]
+        return providers or available
+
+    def _onnx_weights_path(self) -> Path:
+        configured = self.settings.get("onnx_weights_path")
+        if configured:
+            return Path(str(configured))
+        return self.weights_path.with_suffix(".onnx")
+
     def detect(self, image: np.ndarray) -> list[dict[str, Any]]:
         if not self.ready or self.model is None:
             return []
 
+        if self.backend == "onnxruntime":
+            return self._detect_with_onnxruntime(image)
+        return self._detect_with_ultralytics(image)
+
+    def _detect_with_ultralytics(self, image: np.ndarray) -> list[dict[str, Any]]:
+        input_size = int(self.settings.get("input_size", 640) or 640)
+        device = str(self.settings.get("device", "cpu") or "cpu")
         predictions = self.model.predict(
             source=image,
             conf=float(self.settings.get("confidence_threshold", 0.3)),
             iou=float(self.settings.get("iou_threshold", 0.5)),
             max_det=int(self.settings.get("max_detections", 5)),
+            imgsz=input_size,
+            device=device,
             verbose=False,
         )
         if not predictions:
@@ -74,3 +168,234 @@ class PlateDetector:
 
         detections.sort(key=lambda item: item["confidence"], reverse=True)
         return detections
+
+    def _detect_with_onnxruntime(self, image: np.ndarray) -> list[dict[str, Any]]:
+        if self.onnx_input_name is None:
+            return []
+
+        input_size = max(int(self.settings.get("input_size", 640) or 640), 32)
+        tensor, scale, pad_left, pad_top = self._preprocess_for_onnx(image, input_size)
+
+        try:
+            outputs = self.model.run(self.onnx_output_names, {self.onnx_input_name: tensor})
+        except Exception:
+            return []
+
+        predictions = self._extract_onnx_predictions(outputs)
+        if predictions.size == 0:
+            return []
+
+        if predictions.shape[1] in {6, 7}:
+            detections = self._postprocess_onnx_nms_output(
+                predictions=predictions,
+                scale=scale,
+                pad_left=pad_left,
+                pad_top=pad_top,
+                original_shape=image.shape,
+            )
+        else:
+            detections = self._postprocess_onnx_raw_output(
+                predictions=predictions,
+                scale=scale,
+                pad_left=pad_left,
+                pad_top=pad_top,
+                original_shape=image.shape,
+            )
+
+        detections.sort(key=lambda item: item["confidence"], reverse=True)
+        max_detections = max(int(self.settings.get("max_detections", 5) or 5), 1)
+        return detections[:max_detections]
+
+    @staticmethod
+    def _preprocess_for_onnx(image: np.ndarray, input_size: int) -> tuple[np.ndarray, float, int, int]:
+        height, width = image.shape[:2]
+        scale = min(input_size / max(width, 1), input_size / max(height, 1))
+        resized_width = max(int(round(width * scale)), 1)
+        resized_height = max(int(round(height * scale)), 1)
+
+        resized = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+        canvas = np.full((input_size, input_size, 3), 114, dtype=np.uint8)
+        pad_left = max((input_size - resized_width) // 2, 0)
+        pad_top = max((input_size - resized_height) // 2, 0)
+        canvas[pad_top:pad_top + resized_height, pad_left:pad_left + resized_width] = resized
+
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+        tensor = rgb.astype(np.float32) / 255.0
+        tensor = np.transpose(tensor, (2, 0, 1))[None, ...]
+        return tensor, scale, pad_left, pad_top
+
+    @staticmethod
+    def _extract_onnx_predictions(outputs: list[Any]) -> np.ndarray:
+        for output in outputs:
+            array = np.asarray(output)
+            if array.size == 0:
+                continue
+
+            if array.ndim == 3:
+                array = array[0]
+            if array.ndim == 1 and array.shape[0] in {6, 7}:
+                return array.reshape(1, -1)
+            if array.ndim != 2:
+                continue
+
+            if array.shape[1] in {6, 7}:
+                return array.astype(np.float32)
+            if array.shape[0] >= 5 and array.shape[0] < array.shape[1]:
+                return array.T.astype(np.float32)
+            return array.astype(np.float32)
+
+        return np.empty((0, 0), dtype=np.float32)
+
+    def _postprocess_onnx_raw_output(
+        self,
+        predictions: np.ndarray,
+        scale: float,
+        pad_left: int,
+        pad_top: int,
+        original_shape: tuple[int, ...],
+    ) -> list[dict[str, Any]]:
+        if predictions.shape[1] <= 4:
+            return []
+
+        boxes_xywh = predictions[:, :4]
+        class_scores = predictions[:, 4:]
+        if class_scores.size == 0:
+            return []
+
+        class_indices = class_scores.argmax(axis=1)
+        confidences = class_scores.max(axis=1)
+        confidence_threshold = float(self.settings.get("confidence_threshold", 0.3))
+        candidate_indices = np.where(confidences >= confidence_threshold)[0]
+        if candidate_indices.size == 0:
+            return []
+
+        boxes_for_nms: list[list[int]] = []
+        selected_scores: list[float] = []
+        candidate_rows: list[tuple[int, dict[str, int], float]] = []
+
+        for index in candidate_indices:
+            bbox = self._scale_xywh_to_original(
+                box=boxes_xywh[index],
+                scale=scale,
+                pad_left=pad_left,
+                pad_top=pad_top,
+                original_shape=original_shape,
+            )
+            width = max(bbox["x2"] - bbox["x1"], 1)
+            height = max(bbox["y2"] - bbox["y1"], 1)
+            boxes_for_nms.append([bbox["x1"], bbox["y1"], width, height])
+            selected_scores.append(float(confidences[index]))
+            candidate_rows.append((int(class_indices[index]), bbox, float(confidences[index])))
+
+        kept_indices = cv2.dnn.NMSBoxes(
+            bboxes=boxes_for_nms,
+            scores=selected_scores,
+            score_threshold=confidence_threshold,
+            nms_threshold=float(self.settings.get("iou_threshold", 0.5)),
+        )
+        if len(kept_indices) == 0:
+            return []
+
+        detections: list[dict[str, Any]] = []
+        for kept_index in np.array(kept_indices).reshape(-1):
+            class_index, bbox, confidence = candidate_rows[int(kept_index)]
+            detections.append(
+                {
+                    "bbox": bbox,
+                    "confidence": confidence,
+                    "label": self._label_for_class(class_index),
+                }
+            )
+        return detections
+
+    def _postprocess_onnx_nms_output(
+        self,
+        predictions: np.ndarray,
+        scale: float,
+        pad_left: int,
+        pad_top: int,
+        original_shape: tuple[int, ...],
+    ) -> list[dict[str, Any]]:
+        confidence_threshold = float(self.settings.get("confidence_threshold", 0.3))
+        detections: list[dict[str, Any]] = []
+
+        for row in predictions:
+            if row.shape[0] < 6:
+                continue
+            confidence = float(row[4])
+            if confidence < confidence_threshold:
+                continue
+
+            class_index = int(row[5]) if row.shape[0] > 5 else 0
+            bbox = self._scale_xyxy_to_original(
+                box=row[:4],
+                scale=scale,
+                pad_left=pad_left,
+                pad_top=pad_top,
+                original_shape=original_shape,
+            )
+            detections.append(
+                {
+                    "bbox": bbox,
+                    "confidence": confidence,
+                    "label": self._label_for_class(class_index),
+                }
+            )
+
+        return detections
+
+    @staticmethod
+    def _scale_xywh_to_original(
+        box: np.ndarray,
+        scale: float,
+        pad_left: int,
+        pad_top: int,
+        original_shape: tuple[int, ...],
+    ) -> dict[str, int]:
+        center_x, center_y, width, height = [float(value) for value in box.tolist()]
+        x1 = center_x - (width / 2.0)
+        y1 = center_y - (height / 2.0)
+        x2 = center_x + (width / 2.0)
+        y2 = center_y + (height / 2.0)
+        return PlateDetector._scale_xyxy_to_original(
+            box=np.asarray([x1, y1, x2, y2], dtype=np.float32),
+            scale=scale,
+            pad_left=pad_left,
+            pad_top=pad_top,
+            original_shape=original_shape,
+        )
+
+    @staticmethod
+    def _scale_xyxy_to_original(
+        box: np.ndarray,
+        scale: float,
+        pad_left: int,
+        pad_top: int,
+        original_shape: tuple[int, ...],
+    ) -> dict[str, int]:
+        original_height = int(original_shape[0])
+        original_width = int(original_shape[1])
+        x1, y1, x2, y2 = [float(value) for value in box.tolist()]
+
+        x1 = (x1 - pad_left) / max(scale, 1e-6)
+        y1 = (y1 - pad_top) / max(scale, 1e-6)
+        x2 = (x2 - pad_left) / max(scale, 1e-6)
+        y2 = (y2 - pad_top) / max(scale, 1e-6)
+
+        x1 = int(np.clip(round(x1), 0, max(original_width - 1, 0)))
+        y1 = int(np.clip(round(y1), 0, max(original_height - 1, 0)))
+        x2 = int(np.clip(round(x2), x1 + 1, max(original_width, x1 + 1)))
+        y2 = int(np.clip(round(y2), y1 + 1, max(original_height, y1 + 1)))
+
+        return {
+            "x1": x1,
+            "y1": y1,
+            "x2": x2,
+            "y2": y2,
+        }
+
+    def _label_for_class(self, class_index: int) -> str:
+        configured = self.settings.get("class_names")
+        if isinstance(configured, list) and 0 <= class_index < len(configured):
+            return str(configured[class_index])
+        return "plate_number"

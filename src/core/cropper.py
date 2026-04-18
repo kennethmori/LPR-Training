@@ -35,6 +35,43 @@ def resize_for_ocr(image: np.ndarray, target_width: int) -> np.ndarray:
     return cv2.resize(image, (target_width, target_height), interpolation=cv2.INTER_CUBIC)
 
 
+def preprocess_for_ocr(image: np.ndarray, settings: dict[str, object] | None = None) -> np.ndarray:
+    if image is None or image.size == 0:
+        return image
+
+    options = settings or {}
+    if not bool(options.get("preprocess_enabled", False)):
+        return image
+
+    if image.ndim == 3:
+        working = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        working = image.copy()
+
+    if bool(options.get("preprocess_equalize_hist", True)):
+        working = cv2.equalizeHist(working)
+
+    blur_kernel = max(int(options.get("preprocess_blur_kernel", 0) or 0), 0)
+    if blur_kernel > 1:
+        if blur_kernel % 2 == 0:
+            blur_kernel += 1
+        working = cv2.GaussianBlur(working, (blur_kernel, blur_kernel), 0)
+
+    if bool(options.get("preprocess_adaptive_threshold", False)):
+        working = cv2.adaptiveThreshold(
+            working,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            11,
+        )
+
+    if image.ndim == 3:
+        return cv2.cvtColor(working, cv2.COLOR_GRAY2BGR)
+    return working
+
+
 def annotate_detection(
     image: np.ndarray,
     bbox: dict[str, int],

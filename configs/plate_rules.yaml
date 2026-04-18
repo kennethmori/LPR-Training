@@ -1,5 +1,5 @@
-enabled: false
-substitutions:
-  O: "0"
-  I: "1"
-allowed_pattern: "^[A-Z0-9]+$"
+enabled: true
+# Valid plates in the checked-in labels include literal O/I characters,
+# so avoid coercing them into digits during normalization.
+substitutions: {}
+allowed_pattern: "^(?=.*[A-Z])(?=.*\\d)[A-Z0-9]{6,8}$"

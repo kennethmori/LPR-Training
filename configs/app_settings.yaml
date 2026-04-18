@@ -3,38 +3,157 @@ app:
   subtitle: Two-Stage YOLO + OCR Prototype
   university: University of Southern Mindanao
   debug: true
-
+  default_camera_role: entry
+  dashboard_refresh_seconds: 0.25
 paths:
   detector_weights: models/detector/best.pt
+  database_path: outputs/app_data/plate_events.db
+  video_upload_dir: outputs/app_data/video_uploads
   annotated_output_dir: outputs/annotated_frames
   crop_output_dir: outputs/plate_crops
   event_log_path: outputs/demo_logs/events.jsonl
-
+  performance_log_path: outputs/demo_logs/performance.jsonl
 detector:
+  backend: onnxruntime
   confidence_threshold: 0.3
   iou_threshold: 0.5
   padding_ratio: 0.05
   max_detections: 5
-
+  input_size: 640
+  device: cpu
+  onnx_weights_path: outputs/detector/best.onnx
+  onnx_execution_providers:
+  - CPUExecutionProvider
 ocr:
   preferred_engine: paddleocr
   fallback_engine: easyocr
   min_confidence: 0.3
   resize_width: 320
-
+  cpu_threads: 8
+  cache_enabled: true
+  cache_size: 256
+  cache_signature_width: 48
+  cache_signature_height: 16
+  cache_quantization_levels: 16
+  preprocess_enabled: true
+  preprocess_equalize_hist: true
+  preprocess_blur_kernel: 3
+  preprocess_adaptive_threshold: false
+  reuse_when_bbox_stable: true
+  reuse_bbox_iou_threshold: 0.9
+  reuse_center_distance_ratio: 0.08
+  reuse_max_age_seconds: 0.75
+  paddle_rec_model_name: en_PP-OCRv5_mobile_rec
+  paddle_rec_model_dir: outputs/paddleocr/en_PP-OCRv5_mobile_rec
+  easyocr_model_dir: outputs/easyocr_model
+  easyocr_user_dir: outputs/easyocr_user
 postprocess:
   uppercase: true
   strip_non_alnum: true
   collapse_spaces: true
-  apply_soft_rules: false
-
+  apply_soft_rules: true
+  min_length: 6
+  max_length: 8
+  require_letter_digit_mix: true
 stabilization:
   history_size: 5
-  min_repetitions: 2
+  min_repetitions: 3
+  process_every_n_frames: 1
+  idle_process_every_n_frames: 1
+  active_process_every_n_frames: 1
+  enable_tracking_overlay: true
+  tracking_persistence_frames: 12
+tracking:
+  enabled: true
+  detector_every_n_frames: 1
+  max_tracks: 4
+  max_missed_frames: 12
+  max_detector_gap_frames: 15
+  match_iou_threshold: 0.3
+  match_center_distance_ratio: 0.6
+  min_plate_width: 96
+  min_plate_height: 24
+  min_detector_confidence_for_ocr: 0.55
+  min_sharpness_for_ocr: 45.0
+  ocr_cooldown_frames: 2
+  ocr_cooldown_seconds: 0.15
+  stop_ocr_after_stable: true
+  tracker_backend: auto
+stream:
+  preview_max_width: 800
+  preview_max_height: 450
+  preview_jpeg_quality: 65
+  stream_frame_interval_seconds: 0.01
+  payload_emit_every_n_processed_frames: 1
+  include_camera_annotated_base64: false
+  include_camera_crop_base64: true
+  include_sse_crop_base64: false
+  log_no_detection_frames: false
+performance:
+  min_record_interval_seconds: 1.0
+  max_recent_entries: 5000
+artifacts:
+  save_event_images: true
+  save_camera_event_images: true
+  save_upload_event_images: true
+  save_video_event_images: false
+  save_cooldown_seconds: 4
+uploads:
+  max_image_bytes: 10485760
+  max_video_bytes: 104857600
+  allowed_image_extensions:
+  - .jpg
+  - .jpeg
+  - .png
+  - .bmp
+  - .webp
+  allowed_video_extensions:
+  - .mp4
+  - .avi
+  - .mov
+  - .mkv
+  - .webm
+  - .m4v
+  allowed_image_mime_types:
+  - image/jpeg
+  - image/png
+  - image/bmp
+  - image/webp
+  allowed_video_mime_types:
+  - video/mp4
+  - video/x-msvideo
+  - video/quicktime
+  - video/x-matroska
+  - video/webm
+video_upload:
   process_every_n_frames: 3
-
+  max_processed_frames: 300
+session:
+  enabled: true
+  cooldown_seconds: 15
+  allow_only_one_open_session_per_plate: true
+  store_unmatched_exit_events: true
+  min_detector_confidence: 0.5
+  min_ocr_confidence: 0.8
+  min_stable_occurrences: 3
+  ambiguity_window_seconds: 30
+  ambiguity_char_distance: 1
 camera:
-  source_index: 0
-  width: 1280
-  height: 720
-  fps_sleep_seconds: 0.03
+  source: http://192.168.0.251:4747/video
+  source_name: phone_camera
+  width: 960
+  height: 540
+  fps_sleep_seconds: 0.01
+cameras:
+  entry:
+    source: http://192.168.0.251:4747/video
+    source_name: entry_phone
+    width: 960
+    height: 540
+    fps_sleep_seconds: 0.01
+  exit:
+    source: null
+    source_name: exit_phone
+    width: 960
+    height: 540
+    fps_sleep_seconds: 0.01
