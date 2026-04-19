@@ -2,27 +2,31 @@
 
 ## Purpose
 
-This document turns the current prototype status into a practical build plan.
+This document turns the current codebase status into a practical next-step plan.
 
 It answers:
 
 - what is already done
-- what should be built next
+- what should be improved next
 - what can wait until later
-- what counts as a good thesis-demo or prototype milestone
+- what counts as a strong thesis-demo milestone from the current baseline
 
-The goal is to move from a recognition prototype into a usable campus vehicle monitoring workflow without mixing priorities.
+The project has already moved past a recognition-only prototype. The roadmap now focuses on hardening the existing local-first session-tracking system.
 
 ## Current Status
 
-The repository already has a working recognition prototype with these foundations:
+The repository already includes these foundations:
 
 - YOLO detector integration for one class: `plate_number`
 - OCR integration with pretrained engines
 - post-processing and short-history stabilization
-- image upload and live camera inference
-- FastAPI-based web UI
-- prepared OCR evaluation data
+- image upload inference
+- video upload inference
+- role-aware live camera inference through `entry` and `exit` cameras
+- FastAPI-based dashboard and API routes
+- SQLite-backed recognition-event and vehicle-session persistence
+- unmatched-exit handling, moderation routes, and performance snapshots
+- prepared OCR evaluation data and detector dataset splits
 
 Current data snapshot in the workspace:
 
@@ -32,358 +36,188 @@ Current data snapshot in the workspace:
 
 What this means in practice:
 
-- OCR evaluation can already be run from the prepared crop truth files
-- detector fine-tuning can proceed once the team is satisfied with the detector labels and fine-tuning settings
-- the main missing work is the system layer above recognition
+- the local app already supports the main entry and exit demo flow
+- the main missing work is around verification, maintainability, and operational maturity
+- recognition quality work can continue in parallel with app hardening
 
 ## Main Project Goal
 
-The larger target is not only reading plate numbers.
-
-The real target is a campus vehicle monitoring system where:
+The larger target is still a clear campus vehicle monitoring workflow where:
 
 1. an `entry` camera recognizes a stable plate
 2. the system opens a vehicle session
 3. an `exit` camera recognizes that same plate later
 4. the system closes the matching session
 
-That means the next steps should prioritize turning recognition output into reliable, trackable events.
+That core flow is already present in the current codebase. The next milestone is making that flow more reliable, testable, and easier to operate.
 
 ## Recommended Priority Order
 
 The best next-stage order for this repository is:
 
-1. Finish detector fine-tuning and detector-only validation
-2. Evaluate OCR on the prepared crop truth data
-3. Evaluate the full detector-plus-OCR pipeline
-4. Add camera roles for `entry` and `exit`
-5. Add a session service above the recognition layer
-6. Add persistent storage for active and completed sessions
-7. Extend API routes and UI for operational monitoring
-8. Add tests, logging improvements, and deployment hardening
+1. Add automated tests for session, storage, and API behavior
+2. Tighten API response typing and schema alignment
+3. Add database lifecycle support such as migrations or versioning
+4. Improve moderation and operator-facing workflows
+5. Continue detector and OCR quality improvements
+6. Harden real two-camera deployment behavior
+7. Only then consider optional sync or remote dashboard work
 
-This order keeps the model quality questions separate from the application workflow questions.
+This order keeps local reliability first and avoids turning optional online work into a new critical-path dependency.
 
-## Phase 1: Recognition Readiness
+## Phase 1: Verification And Test Coverage
 
-This phase is about proving that the recognition pipeline is good enough to build on.
+This phase is about proving that the existing behavior is correct and stable.
 
-For the detailed working plan, see [phase-1-plan.md](phase-1-plan.md).
+### Goals
 
-### Detector Work
+- make session decisions verifiable
+- reduce regression risk when tuning thresholds or routes
+- give future changes a safety net
 
-Goals:
+### Tasks
 
-- train `yolo26s.pt` using the current detector dataset
-- validate detector performance on `val`
-- measure final detector behavior on `test`
+- add unit tests for `SessionService`
+- add storage tests for schema initialization, CRUD behavior, and moderation flows
+- add API tests for status, camera, session, event, and moderation endpoints
+- add test fixtures for realistic `entry` then `exit` event sequences
 
-Tasks:
+### Deliverables
 
-- run detector fine-tuning with `scripts/train_detector.py`
-- export validation metrics and confusion information from Ultralytics results
-- inspect detector failure cases manually
-- confirm that empty YOLO labels that came from Roboflow null-image negatives are intentional
+- top-level `tests/` directory
+- passing tests for core session and storage behavior
+- a short verification checklist for local runtime workflows
 
-Deliverables:
+## Phase 2: API And Config Hardening
 
-- trained detector weights in `models/detector/best.pt`
-- saved training results and plots
-- a short detector evaluation summary for the thesis or project report
+This phase is about making the runtime contract clearer and easier to maintain.
 
-### OCR Work
+### Goals
 
-Goals:
+- keep route responses aligned with declared schemas
+- reduce ambiguity in operator-facing and integration-facing payloads
+- make configuration behavior easier to reason about
 
-- measure how well the current pretrained OCR setup performs on the prepared crops
+### Tasks
 
-Tasks:
+- audit endpoints that still build ad hoc dict payloads
+- return schema-aligned payloads consistently where practical
+- document role-based camera configuration and detector backend selection more clearly
+- review threshold defaults in `configs/app_settings.yaml`
 
-- run OCR inference over `val_crops` and `test_crops`
-- save predictions as CSV with `image_path,predicted_text`
-- compare predictions against ground truth using `scripts/evaluate_ocr.py`
-- analyze common OCR failure patterns
+### Deliverables
 
-Deliverables:
+- cleaner API contracts
+- fewer docs-versus-code mismatches
+- better confidence when changing settings or UI consumers
 
-- OCR prediction CSVs
-- exact-match and character-accuracy metrics
-- a short error analysis summary
+## Phase 3: Database Lifecycle And Moderation
 
-### End-to-End Recognition Work
+This phase is about making the SQLite layer easier to evolve safely.
 
-Goals:
+### Goals
 
-- measure realistic pipeline quality when detector and OCR run together
+- prepare for schema evolution
+- improve operator review workflows
+- keep local data durable and understandable
 
-Tasks:
+### Tasks
 
-- run the full recognition pipeline on a held-out evaluation set
-- save detector-plus-OCR outputs into an evaluation CSV
-- score the results with `scripts/evaluate_end_to_end.py`
+- introduce a migration or versioning strategy
+- define backup and retention expectations for longer-running deployments
+- improve unmatched-exit review and manual moderation workflows if needed
+- document what operational data is authoritative in SQLite versus debug-only in JSONL
 
-Deliverables:
+### Deliverables
 
-- end-to-end evaluation CSV
-- end-to-end exact match accuracy
-- detection rate and runtime summary
+- database lifecycle guidance
+- safer future schema changes
+- clearer operator-facing moderation expectations
 
-## Phase 2: Entry and Exit Architecture
+## Phase 4: Recognition Quality Improvements
 
-This phase starts the actual campus monitoring system design.
+This phase is about improving read quality without destabilizing the system layer.
 
-### Camera Roles
+### Goals
 
-The codebase currently assumes one camera source.
+- improve difficult real-world plate reads
+- tune thresholds using the prepared evaluation assets
+- keep detector-only, OCR-only, and end-to-end results separate
 
-Next work:
+### Tasks
 
-- support two logical camera roles: `entry` and `exit`
-- allow camera-specific configuration
-- make camera outputs and logs carry their role explicitly
+- continue detector fine-tuning and threshold evaluation
+- evaluate OCR quality on the prepared crop truth files
+- analyze failure cases in low-light, blur, and near-match scenarios
+- decide whether multi-detection support is worth the added complexity later
 
-Expected implementation direction:
+### Deliverables
 
-- update config structure in `configs/app_settings.yaml`
-- extend camera service or introduce a camera manager
-- ensure every recognition event includes `camera_role`
+- updated detector and OCR metrics
+- concrete notes on failure modes and threshold tradeoffs
+- better confidence in real deployment conditions
 
-### Recognition Event Layer
+## Phase 5: Deployment Hardening
 
-Before session tracking is added, the app should expose a cleaner event abstraction.
+This phase is about making the app easier to run in a real two-camera setup.
 
-Each event should include at least:
+### Goals
 
-- `plate_number`
-- `camera_role`
-- `timestamp`
-- `raw_text`
-- `cleaned_text`
-- `stable_text`
-- `detector_confidence`
-- `ocr_confidence` when available
-- optional snapshot or crop reference
+- keep the local app stable during long-running camera sessions
+- make operator workflows less fragile
+- preserve graceful degradation
 
-This event object becomes the boundary between recognition code and session code.
+### Tasks
 
-## Phase 3: Session Tracking
+- test with realistic dual-camera traffic sequences
+- refine startup, shutdown, and failure messaging
+- validate upload limits, camera source settings, and detector backend switching
+- add runbook-style deployment notes for a campus workstation setup
 
-This phase turns recognition into a visit-monitoring workflow.
+### Deliverables
 
-### Session Service
+- more predictable field behavior
+- clearer recovery steps when a camera or dependency is unavailable
+- stronger demo readiness
 
-Add a dedicated service, likely in `src/services/session_service.py`.
+## Phase 6: Optional Online Layer
 
-Responsibilities:
+This phase is explicitly optional and comes after the local system is solid.
 
-- accept stable recognition events
-- open sessions for valid entry events
-- close sessions for matching exit events
-- keep the matching logic out of detector and OCR modules
+### Goals
 
-### Session Rules
+- expose selected results remotely without weakening the local critical path
 
-The initial business rules should stay simple and explicit:
+### Tasks
 
-- one open session per plate at a time
-- `entry` event opens a session if none is open
-- repeated `entry` reads during cooldown do not open duplicates
-- `exit` event closes the most recent open session for that plate
-- unmatched exits are logged for review
+- add a background sync worker only if the user wants it
+- mark synced versus unsynced records locally
+- keep sync non-blocking and internet-optional
+- build or connect a remote dashboard only as a downstream reporting layer
 
-### Suggested Session Fields
+### Deliverables
 
-Store at least:
+- optional remote visibility
+- preserved local-first reliability
 
-- `plate_number`
-- `entry_time`
-- `exit_time`
-- `entry_camera`
-- `exit_camera`
-- `status`
+## Definition Of A Strong Next Milestone
 
-Helpful extras:
+The next milestone should be considered successful when all of these are true:
 
-- `entry_snapshot_path`
-- `exit_snapshot_path`
-- `entry_confidence`
-- `exit_confidence`
-- `notes`
+- session open, close, duplicate-ignore, and unmatched-exit behavior are covered by tests
+- the main API endpoints return predictable schema-aligned payloads
+- the SQLite lifecycle is documented clearly enough for future changes
+- the app still degrades honestly when detector, OCR, storage, or camera inputs are unavailable
+- detector and OCR quality work can continue without muddying the operational layer
 
-## Phase 4: Persistence
+## What Can Wait
 
-The current app does not yet have durable session storage.
+These are useful, but they should not block the next milestone:
 
-Recommended first step:
+- a heavy frontend rewrite
+- remote-first architecture
+- cloud dependencies in the live recognition loop
+- multi-plate final decision logic in one frame
+- custom OCR training as a required runtime dependency
 
-- SQLite
-
-Why SQLite is the right starting point:
-
-- simple to set up locally
-- good fit for a prototype or thesis demo
-- enough for active sessions, completed sessions, and event logs
-
-Suggested persistence scope:
-
-- active sessions
-- completed sessions
-- unmatched exit events
-- optionally, raw recognition event logs
-
-## Phase 5: API And UI Expansion
-
-Once sessions exist, the frontend and API need to reflect that new system layer.
-
-### API Additions
-
-Recommended new endpoints:
-
-- `GET /sessions/active`
-- `GET /sessions/history`
-- `GET /events/recent`
-- `GET /events/unmatched-exit`
-- `POST /sessions/{id}/close` for controlled manual override if needed
-
-Also recommended:
-
-- make route outputs align more consistently with `src/api/schemas.py`
-- move away from mostly plain dict responses over time
-
-### UI Additions
-
-Recommended UI capabilities:
-
-- side-by-side `entry` and `exit` camera panels
-- active vehicles currently inside campus
-- completed visit history
-- recent recognition events
-- unmatched or suspicious event review
-
-Optional but useful later:
-
-- manual correction of a plate event
-- manual force-close of a session
-- filters by date, plate number, or status
-
-## Phase 6: Reliability And Engineering Work
-
-This phase focuses on turning the prototype into something more stable and maintainable.
-
-### Testing
-
-The repo still needs a proper testing layer.
-
-Recommended additions:
-
-- unit tests for post-processing rules
-- unit tests for result stabilization behavior
-- unit tests for session open and close rules
-- integration tests for recognition-event to session flow
-
-### Logging And Debugging
-
-Recommended improvements:
-
-- clearer event logs by camera role
-- explicit unmatched-exit logging
-- structured logging around session state changes
-- optional failure-case image export for hard samples
-
-### Configuration Hygiene
-
-Recommended additions:
-
-- session cooldown settings in YAML
-- camera-role settings in YAML
-- database path setting in YAML
-- runtime toggles for debug exports
-
-## Phase 7: Deployment And Demo Readiness
-
-This phase is about making the system usable in a real demonstration.
-
-Recommended tasks:
-
-- define the actual two-camera deployment setup
-- test with realistic entry and exit traffic sequences
-- validate performance under day and night conditions
-- verify recovery behavior after app restart
-- prepare screenshots, metrics, and workflow diagrams for reporting
-
-## Practical Milestones
-
-The following milestones are realistic and useful.
-
-### Milestone A: Recognition Baseline
-
-Definition:
-
-- detector trained
-- OCR evaluated
-- end-to-end metrics collected
-
-### Milestone B: Dual-Camera Prototype
-
-Definition:
-
-- app understands `entry` and `exit` roles
-- both sources can be monitored
-- stable recognition events include camera role
-
-### Milestone C: Session Prototype
-
-Definition:
-
-- entry opens a session
-- exit closes the matching session
-- duplicate reads are filtered with cooldown
-
-### Milestone D: Usable Thesis Demo
-
-Definition:
-
-- dual-camera workflow works end to end
-- sessions survive restart through SQLite
-- UI shows active sessions and recent history
-- evaluation metrics and demo evidence are documented
-
-## Definition Of Done For The Next Major Stage
-
-The next major stage should be considered complete when all of these are true:
-
-- detector metrics are documented
-- OCR metrics are documented
-- end-to-end metrics are documented
-- the app supports `entry` and `exit` camera roles
-- stable recognition events feed into a dedicated session service
-- session records are stored durably
-- duplicate entry and exit events are controlled
-- the UI exposes active and completed sessions
-
-## Risks And Watchouts
-
-The main risks in the next stage are:
-
-- OCR misreads causing wrong session matches
-- repeated detections causing duplicate sessions
-- camera-role logic being mixed directly into OCR or detector code
-- unclear source of truth between recognition events and session records
-- overcomplicating the system before baseline metrics are collected
-
-The safest design choice is to keep layers separate:
-
-- recognition layer reads plates
-- session layer decides what the event means operationally
-- persistence layer stores the result
-
-## Suggested Immediate Next Step
-
-If the team wants the best next action right now, it should be:
-
-1. train and validate the detector
-2. run OCR evaluation on the prepared crop truth files
-3. collect end-to-end metrics
-4. only then begin the session-service implementation
-
-That sequence gives the project a stronger foundation and cleaner reporting.
+The strongest immediate path is to keep the current local system honest, tested, and stable.

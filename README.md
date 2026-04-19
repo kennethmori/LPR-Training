@@ -1,25 +1,26 @@
 # USM License Plate Recognition Prototype
 
-This repository is a starter for a two-stage University of Southern Mindanao license plate recognition system:
+This repository contains a local-first University of Southern Mindanao license plate recognition system:
 
 1. YOLO detects the license plate region.
 2. OCR reads the cropped plate text.
+3. Stable `entry` and `exit` reads are turned into vehicle-session events.
 
-The scaffold is designed for the workflow recommended in your project blueprint:
+The current app already includes the recognition pipeline, a FastAPI dashboard, role-based camera handling, session tracking, and SQLite-backed persistence.
 
-- fine-tune the detector in Google Colab
-- run the final prototype locally
-- keep detection, OCR, post-processing, and UI clearly separated
-- report detector-only, OCR-only, and end-to-end results independently
-
-## Version 1 Scope
+## Current App Capabilities
 
 - one detector class: `plate_number`
 - one primary plate result per frame
-- image upload plus live webcam
+- image upload inference
+- video upload inference
+- live camera inference with role-aware `entry` and `exit` cameras
 - pretrained OCR first
+- conservative post-processing plus recent-history stabilization
+- session tracking with cooldown and unmatched-exit handling
 - FastAPI + Jinja2 web interface
-- conservative post-processing only
+- SQLite persistence for events and sessions
+- JSONL debug logging and performance snapshots
 
 ## Project Layout
 
@@ -35,16 +36,6 @@ templates/      HTML templates
 static/         CSS, JS, and image assets
 outputs/        Generated annotated frames, crops, logs, metrics, failures
 ```
-
-## Recommended Build Order
-
-1. Prepare data and manifests.
-2. Fine-tune `yolo26s.pt` in Colab.
-3. Place `best.pt` in `models/detector/`.
-4. Build and validate still-image inference locally.
-5. Add saved-video inference.
-6. Add webcam mode.
-7. Finalize UI polish and evaluation outputs.
 
 ## Current Dataset Status
 
@@ -76,6 +67,7 @@ For deeper project documentation, see:
 - `docs/README.md`
 - `docs/setup.md`
 - `docs/architecture.md`
+- `docs/CONTEXT.md`
 - `docs/data-workflow.md`
 - `docs/evaluation.md`
 - `docs/implementation-roadmap.md`
@@ -105,28 +97,31 @@ uvicorn src.app:app --reload
 
 Open `http://127.0.0.1:8000`.
 
-## Model Placement
+## Detector Runtime
 
-Put your trained detector weights here:
+The current default detector backend is `onnxruntime`, configured through `configs/app_settings.yaml`.
 
-```text
-models/detector/best.pt
-```
+- default ONNX path: `models/detector/best.onnx`
+- Ultralytics fallback weights path: `models/detector/best.pt`
 
-The app will start even if the detector or OCR dependencies are missing, but the status endpoint and UI will show which modules are unavailable so the prototype stays honest.
+If you switch `detector.backend` back to `ultralytics`, make sure `models/detector/best.pt` exists.
 
-## Recommended Detector Baseline
+## Main Runtime Outputs
 
-Use `yolo26s.pt` as the main detector baseline.
+- SQLite database: `outputs/app_data/plate_events.db`
+- uploaded videos: `outputs/app_data/video_uploads`
+- event log: `outputs/demo_logs/events.jsonl`
+- performance log: `outputs/demo_logs/performance.jsonl`
+- annotated frames: `outputs/annotated_frames`
+- plate crops: `outputs/plate_crops`
 
-- main choice: `yolo26s.pt`
-- fallback for weaker hardware: `yolo26n.pt`
+## Recommended Next Priorities
 
-You can train with the helper script:
-
-```bash
-python scripts/train_detector.py --data configs/detector_data.yaml --model yolo26s.pt
-```
+1. Add automated tests for session rules, storage behavior, and API routes.
+2. Tighten schema-first API response handling.
+3. Add database migration or versioning support.
+4. Continue detector and OCR quality improvements for difficult plate cases.
+5. Harden the app for real two-camera operation and operator workflows.
 
 ## Notes
 
@@ -139,5 +134,5 @@ python scripts/train_detector.py --data configs/detector_data.yaml --model yolo2
 python scripts/run_ocr_evaluation.py data/ocr/all_crops data/ocr/all_labels.csv
 ```
 
-- Avoid random image-only splitting when the same plate appears across nearby frames.
-- Treat Colab runtime metrics and local CPU runtime metrics as separate results.
+- The runtime is local-first: recognition and session logging should continue working without internet access.
+- JSONL logs are useful for debugging, but SQLite is the durable operational store.

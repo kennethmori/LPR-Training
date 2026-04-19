@@ -10,24 +10,30 @@ Install dependencies with:
 pip install -r requirements-local.txt
 ```
 
-The detector and OCR engines depend on optional libraries:
+Optional runtime dependencies depend on which detector and OCR backends you want to use:
 
-- detector: `ultralytics`
+- detector runtime, default path: `onnxruntime`
+- detector training and PT runtime: `ultralytics`
 - OCR: `paddleocr` preferred, `easyocr` as fallback
 
-The app can still start if some of these are missing, but it will report non-ready component modes.
+The app can still start if some of these are missing, but it will report non-ready component modes instead of pretending everything is available.
 
-## Model Placement
+## Detector Model Paths
 
-Place the trained detector weights here:
+The current config defaults to an ONNX detector runtime.
 
-```text
-models/detector/best.pt
-```
+Current default detector settings in `configs/app_settings.yaml`:
 
-The app settings currently point to that path through `configs/app_settings.yaml`.
+- `detector.backend: onnxruntime`
+- `detector.onnx_weights_path: models/detector/best.onnx`
 
-## Start the App
+Ultralytics weights are still supported when you switch the backend:
+
+- `paths.detector_weights: models/detector/best.pt`
+
+If the detector does not load, verify that the configured backend matches the model file you actually have.
+
+## Start The App
 
 Preferred development command:
 
@@ -51,22 +57,26 @@ http://127.0.0.1:8000
 
 Important runtime paths:
 
+- SQLite database: `outputs/app_data/plate_events.db`
+- uploaded videos: `outputs/app_data/video_uploads`
 - annotated output directory: `outputs/annotated_frames`
 - crop output directory: `outputs/plate_crops`
 - event log: `outputs/demo_logs/events.jsonl`
+- performance log: `outputs/demo_logs/performance.jsonl`
 
-The current code creates these directories when needed. The live UI uses base64 image responses for display, while events are persisted to the JSONL log.
+The current code creates these directories when needed. SQLite is the operational source of truth for sessions and recent events, while JSONL logs remain useful for debugging.
 
-## Status and Fallback Behavior
+## Status And Fallback Behavior
 
 The app exposes a status route at `GET /status`.
 
 This is useful for checking whether:
 
-- detector weights were found
-- the detector loaded successfully
+- detector weights and backend are ready
 - OCR dependencies are available
-- the camera is currently running
+- SQLite storage initialized successfully
+- the session layer is ready
+- one or more camera roles are currently running
 
 This project intentionally reports missing dependencies honestly instead of failing silently or pretending the system is ready.
 
@@ -77,8 +87,11 @@ After setup:
 1. Start the app.
 2. Open the web UI.
 3. Check the status panel or `GET /status`.
-4. Upload a test image.
-5. If using a webcam, test camera start and stop.
+4. Upload a test image through `/predict/image`.
+5. Upload a short test video through `/predict/video`.
+6. Start and stop the configured `entry` camera.
+7. If an `exit` camera source is configured, test that role too.
+8. Check `/sessions/active`, `/events/recent`, and `/performance/summary` after a few runs.
 
 ## Config Files
 
@@ -86,6 +99,18 @@ Main runtime settings live in:
 
 - `configs/app_settings.yaml`
 - `configs/plate_rules.yaml`
+
+Important sections in `configs/app_settings.yaml` include:
+
+- `paths`
+- `detector`
+- `ocr`
+- `postprocess`
+- `stabilization`
+- `tracking`
+- `session`
+- `cameras`
+- `uploads`
 
 Main training dataset config:
 

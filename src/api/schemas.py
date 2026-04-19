@@ -119,7 +119,7 @@ class RecognitionSettingsUpdatePayload(BaseModel):
 
 class DetectorRuntimeSettingsPayload(BaseModel):
     backend: str = "ultralytics"
-    onnx_weights_path: str = "outputs/detector/best.onnx"
+    onnx_weights_path: str = "models/detector/best.onnx"
     detector_ready: bool = False
     detector_mode: str = "unavailable"
     updated_at: str | None = None
@@ -128,7 +128,7 @@ class DetectorRuntimeSettingsPayload(BaseModel):
 
 class DetectorRuntimeSettingsUpdatePayload(BaseModel):
     backend: str = "ultralytics"
-    onnx_weights_path: str = "outputs/detector/best.onnx"
+    onnx_weights_path: str = "models/detector/best.onnx"
     ocr_cpu_threads: int = 8
 
 

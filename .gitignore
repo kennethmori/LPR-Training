@@ -31,8 +31,10 @@ outputs/**
 
 # Model weights and exports
 models/detector/*.pt
+!models/detector/best.pt
 models/exports/**
 *.onnx
+!models/detector/best.onnx
 *.engine
 *.torchscript
 

@@ -185,7 +185,7 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 
         return {
             "backend": backend,
-            "onnx_weights_path": str(detector_settings.get("onnx_weights_path", "outputs/detector/best.onnx") or ""),
+            "onnx_weights_path": str(detector_settings.get("onnx_weights_path", "models/detector/best.onnx") or ""),
             "detector_ready": bool(request.app.state.detector.ready),
             "detector_mode": str(request.app.state.detector.mode),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -622,9 +622,9 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
         elif backend != "ultralytics":
             raise HTTPException(status_code=400, detail="Unsupported detector backend.")
 
-        onnx_weights_path = str(payload.onnx_weights_path or "outputs/detector/best.onnx").strip()
+        onnx_weights_path = str(payload.onnx_weights_path or "models/detector/best.onnx").strip()
         if not onnx_weights_path:
-            onnx_weights_path = "outputs/detector/best.onnx"
+            onnx_weights_path = "models/detector/best.onnx"
 
         restarted_roles, failed_roles = _apply_detector_runtime_settings(
             request,

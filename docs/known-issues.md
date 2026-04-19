@@ -9,7 +9,7 @@
 
 ## Runtime Caveats
 
-- If `models/detector/best.pt` is missing, the detector stays unavailable and no detections are produced.
+- If `models/detector/best.pt` is missing while the detector backend is set to `ultralytics`, the detector stays unavailable and no detections are produced.
 - If OCR libraries are missing, OCR remains unavailable and recognition results will be empty.
 - The app still starts in these cases, which is intentional so readiness can be inspected through the UI and status endpoint.
 - Large upload payloads are now constrained by `configs/app_settings.yaml` under `uploads`, so unsupported formats or oversized files are rejected.

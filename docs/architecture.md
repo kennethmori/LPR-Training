@@ -321,7 +321,7 @@ This project does not need React for the current scope. Jinja2 plus vanilla Java
 
 ## Application Composition Root
 
-The current `src/app.py` already acts as the composition root. The final version should build these objects in order:
+The current `src/app.py` already acts as the composition root. It currently builds these objects in roughly this order:
 
 1. settings
 2. output paths
@@ -341,28 +341,25 @@ The current `src/app.py` already acts as the composition root. The final version
 The current app stores:
 
 - `settings`
+- `base_dir`
+- `config_path`
 - `detector`
 - `ocr_engine`
-- `pipeline`
-- `camera_service`
-- `latest_payload`
-
-### Final `app.state`
-
-The final app should store:
-
-- `settings`
-- `detector`
-- `ocr_engine`
-- `postprocessor`
 - `result_service`
 - `logging_service`
+- `performance_service`
 - `pipeline`
-- `storage_service` or `db_path`
+- `storage_service`
 - `session_service`
-- `camera_services` keyed by role
-- optional `camera_manager`
+- `video_upload_dir`
+- `camera_manager`
+- `camera_services`
+- `camera_service` for the default role
+- `default_camera_role`
 - `latest_payloads` keyed by role
+- `latest_payload`
+
+The post-processor is still created in the app factory, but routes currently do not need direct access to it through `app.state`.
 
 ## Main Runtime Flow
 
@@ -704,7 +701,7 @@ The app should remain honest about what is available.
 
 ### Detector readiness
 
-- if `models/detector/best.pt` is missing, detector mode should report `missing_weights`
+- if `models/detector/best.pt` is missing while the backend is `ultralytics`, detector mode should report `missing_weights`
 - the app should still start and serve the dashboard
 
 ### OCR readiness

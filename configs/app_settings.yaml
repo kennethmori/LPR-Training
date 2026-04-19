@@ -21,7 +21,7 @@ detector:
   max_detections: 5
   input_size: 640
   device: cpu
-  onnx_weights_path: outputs/detector/best.onnx
+  onnx_weights_path: models/detector/best.onnx
   onnx_execution_providers:
   - CPUExecutionProvider
 ocr:

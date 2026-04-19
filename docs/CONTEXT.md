@@ -2,69 +2,72 @@
 
 ## What This Project Is About
 
-This project is a two-stage license plate recognition prototype for the University of Southern Mindanao. The first stage uses YOLO to detect the license plate region, and the second stage uses OCR to read the cropped plate text.
+This project is a two-stage license plate recognition system for the University of Southern Mindanao. The first stage uses YOLO to detect the license plate region, and the second stage uses OCR to read the cropped plate text.
 
-The current prototype is focused on reliable recognition, clear status reporting, and a simple FastAPI-based web UI.
+The current app is a local-first FastAPI prototype that already includes session tracking on top of the recognition pipeline.
 
 ## Current Scope
 
 - one detector class: `plate_number`
 - one primary plate result per frame
 - image upload inference
-- live webcam inference
+- video upload inference
+- live camera inference
+- role-aware `entry` and `exit` camera support through a camera manager
 - pretrained OCR first, with fallback support
 - conservative post-processing and result stabilization
-- honest status reporting when detector weights or OCR dependencies are missing
+- SQLite-backed recognition-event and vehicle-session persistence
+- session tracking with cooldown, duplicate suppression, and unmatched-exit logging
+- performance snapshots and honest readiness reporting when detector, OCR, or storage is unavailable
 
-## Planned Entry and Exit System
+## Implemented Entry And Exit System
 
-The intended next phase is not just recognition, but campus vehicle session tracking.
+The current runtime already supports the main campus-monitoring flow:
 
-Target behavior:
+- an `entry` camera can recognize a stable plate number
+- the system can open a vehicle session for that plate
+- an `exit` camera can recognize the same plate later
+- the system can close the most recent matching open session
+- unmatched exits are recorded for review
 
-- an `entry` camera recognizes a stable plate number
-- the system opens a vehicle session for that plate
-- an `exit` camera recognizes the same plate later
-- the system closes the matching open session
-
-Key rules:
+Key rules currently enforced by the app:
 
 - keep recognition logic separate from session lifecycle logic
 - use stable recognition events, not raw frame-by-frame OCR output
-- add debouncing and cooldown rules to prevent duplicate events
-- prefer a dedicated session service and SQLite-backed persistence
+- apply confidence and stability thresholds before a session decision is made
+- apply cooldown and duplicate suppression rules per plate and camera role
+- persist operational state in SQLite while keeping JSONL logs for debugging
 
-## Missing Pieces To Build Next
+## Main Remaining Gaps
 
-The docs consistently identify these as the major remaining parts:
+The largest missing pieces are now around hardening rather than first-time implementation:
 
-1. Dual-camera support with `entry` and `exit` roles
-2. A session service that opens and closes vehicle visits
-3. Durable storage for active and completed sessions
-4. Duplicate-prevention and plate-matching rules
-5. API routes for sessions and events
-6. UI updates for entry, exit, and session monitoring
+1. Automated tests for `SessionService`, `StorageService`, and API routes
+2. Stricter schema-first API response handling
+3. Database lifecycle support such as migrations or versioning
+4. Better moderation and deployment workflows for real operator use
+5. Continued detector and OCR quality improvements for hard cases
+6. Optional future sync or online dashboard work, kept separate from the local critical path
 
-## Suggested Build Order
+## Suggested Next Build Order
 
-1. Add camera roles and dual-camera support.
-2. Add a session service.
-3. Add SQLite persistence for session records.
-4. Add cooldown and matching rules.
-5. Add API endpoints for sessions and events.
-6. Update the frontend for operational monitoring.
-7. Add tests and verification workflows.
+1. Add automated tests for session, storage, and API behavior.
+2. Tighten response modeling so returned payloads consistently align with schemas.
+3. Add database migration or versioning support.
+4. Improve moderation, review, and operational runbooks.
+5. Keep iterating on detector and OCR quality with the prepared evaluation assets.
+6. Only after the local system is stable, consider optional background sync or remote dashboards.
 
 ## Data And Evaluation Plans
 
-The project also plans separate handling for model training, data preparation, and evaluation:
+The project still keeps model training, data preparation, and runtime behavior as separate concerns:
 
 - prepare raw media, manifests, and annotation folders
-- fine-tune the detector in Colab with YOLO
+- fine-tune the detector in Colab with YOLO when needed
 - validate detector-only, OCR-only, and end-to-end performance separately
 - keep local runtime results separate from Colab training metrics
 - use OCR crop datasets with ground-truth labels for evaluation
 
 ## Main Idea In One Line
 
-The project starts as a license plate recognition prototype and is meant to evolve into a campus vehicle monitoring system with entry and exit session tracking.
+This project is now a local-first license plate recognition system with entry and exit session tracking, and the next work is mostly about testing, hardening, and accuracy improvements.
