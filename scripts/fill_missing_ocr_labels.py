@@ -8,7 +8,6 @@ import easyocr
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 
-
 ALLOWLIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 STOPWORDS = {"REGISTERED", "REGION", "PLATE", "HONDA", "PROVISEDE", "ROVISEDE", "IMPE", "REGL"}
 

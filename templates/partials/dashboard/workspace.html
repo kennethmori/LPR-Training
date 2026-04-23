@@ -1,0 +1,361 @@
+<main class="layout" id="mainContent">
+    <aside class="panel controls-panel" aria-label="Controls">
+        <div class="controls-group">
+            <h2 class="panel-heading">Controls</h2>
+            <label for="imageInput">Upload Image or Video</label>
+            <input id="imageInput" name="file" type="file" accept="image/*,video/*">
+            <button id="uploadBtn" type="button" class="btn-primary btn-full">Upload &amp; Analyze</button>
+            <p class="helper-copy">Runs the still-image or sampled-video pipeline without starting a live camera.</p>
+        </div>
+
+        <div class="controls-group">
+            <div class="section-head section-head--camera">
+                <div>
+                    <h3 class="panel-heading panel-heading--flush">Entry Camera</h3>
+                    <span class="camera-source" id="entryCamSource">No source configured</span>
+                </div>
+                <span class="camera-status-pill" id="entryCamLiveBadge">Idle</span>
+            </div>
+            <div class="btn-row">
+                <button id="startEntryBtn" type="button" class="btn-primary" data-camera-role="entry">Start</button>
+                <button id="stopEntryBtn" type="button" class="btn-secondary" data-camera-role="entry">Stop</button>
+            </div>
+        </div>
+
+        <div class="controls-group">
+            <div class="section-head section-head--camera">
+                <div>
+                    <h3 class="panel-heading panel-heading--flush">Exit Camera</h3>
+                    <span class="camera-source" id="exitCamSource">No source configured</span>
+                </div>
+                <span class="camera-status-pill" id="exitCamLiveBadge">Idle</span>
+            </div>
+            <div class="btn-row">
+                <button id="startExitBtn" type="button" class="btn-primary" data-camera-role="exit">Start</button>
+                <button id="stopExitBtn" type="button" class="btn-secondary" data-camera-role="exit">Stop</button>
+            </div>
+        </div>
+
+        <details class="compact-details controls-compact">
+            <summary>Show Readiness Details</summary>
+            <div class="controls-group controls-group--nested">
+                <div class="data-row">
+                    <span class="data-label"><span class="status-dot idle" id="detectorDot"></span>Detector</span>
+                    <span class="data-value" id="detectorStatus">Checking…</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><span class="status-dot idle" id="ocrDot"></span>OCR</span>
+                    <span class="data-value" id="ocrStatus">Checking…</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><span class="status-dot idle" id="entryCamDot"></span>Entry Cam</span>
+                    <span class="data-value" id="entryCamStatus">Idle</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><span class="status-dot idle" id="exitCamDot"></span>Exit Cam</span>
+                    <span class="data-value" id="exitCamStatus">Idle</span>
+                </div>
+            </div>
+        </details>
+    </aside>
+
+    <section class="panel workspace-panel" aria-label="Live Workspace">
+        <div class="panel-heading-row">
+            <h2 class="panel-heading">Workspace</h2>
+            <div class="workspace-toolbar">
+                <div class="workspace-actions">
+                    <button id="workspaceSnapshotsBtn" type="button" class="btn-secondary btn-sm">Snapshots</button>
+                </div>
+                <div class="workspace-badges">
+                    <span class="badge" id="workspaceRoleBadge">UPLOAD</span>
+                    <span class="badge" id="workspaceStateBadge">IDLE</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-bar" role="tablist" aria-label="Workspace views">
+            <button
+                class="tab-btn is-active"
+                id="sourceTabUpload"
+                data-tab="upload"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="tabUpload"
+                tabindex="0"
+            >
+                Upload
+            </button>
+            <button
+                class="tab-btn"
+                id="sourceTabEntry"
+                data-tab="entry"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tabEntry"
+                tabindex="-1"
+            >
+                Entry Feed
+            </button>
+            <button
+                class="tab-btn"
+                id="sourceTabExit"
+                data-tab="exit"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tabExit"
+                tabindex="-1"
+            >
+                Exit Feed
+            </button>
+        </div>
+
+        <div class="workspace-grid">
+            <div class="workspace-feed-stack">
+                <div id="tabUpload" class="tab-content is-active" role="tabpanel" aria-labelledby="sourceTabUpload">
+                    <div class="frame source-view">
+                        <img id="previewImage" alt="Uploaded image with detection overlay" hidden>
+                        <span class="frame-placeholder" id="uploadPlaceholder">Upload an image or video to begin analysis</span>
+                    </div>
+                </div>
+
+                <div id="tabEntry" class="tab-content" role="tabpanel" aria-labelledby="sourceTabEntry" hidden>
+                    <div class="frame source-view">
+                        <img id="entryStream" alt="Entry camera live feed" hidden>
+                        <div class="live-overlay" id="entryOverlay" hidden>
+                            <div class="live-overlay__line live-overlay__role" id="entryOverlayRole">ENTRY</div>
+                            <div class="live-overlay__line" id="entryOverlayState">LIVE  NO DATA</div>
+                            <div class="live-overlay__line" id="entryOverlayPlate">PLATE: —</div>
+                            <div class="live-overlay__line" id="entryOverlayConfidence">DET —  OCR —</div>
+                            <div class="live-overlay__line" id="entryOverlayFps">FPS — / —</div>
+                            <div class="live-overlay__line" id="entryOverlayLatency">LAT —</div>
+                        </div>
+                        <div class="frame-placeholder-shell" id="entryPlaceholder">
+                            <div class="frame-placeholder-top">
+                                <span class="frame-placeholder-meta" id="entryPlaceholderRole">Entry Camera</span>
+                                <span class="frame-placeholder-state" id="entryPlaceholderState">Idle</span>
+                            </div>
+                            <div class="frame-placeholder-center">
+                                <div class="frame-placeholder-title" id="entryPlaceholderTitle">No live feed yet</div>
+                                <div class="frame-placeholder-note" id="entryPlaceholderNote">Press Start to begin capture</div>
+                            </div>
+                            <div class="frame-placeholder-bottom">
+                                <span class="frame-placeholder-source" id="entryPlaceholderSource">Source: —</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tabExit" class="tab-content" role="tabpanel" aria-labelledby="sourceTabExit" hidden>
+                    <div class="frame source-view">
+                        <img id="exitStream" alt="Exit camera live feed" hidden>
+                        <div class="live-overlay" id="exitOverlay" hidden>
+                            <div class="live-overlay__line live-overlay__role" id="exitOverlayRole">EXIT</div>
+                            <div class="live-overlay__line" id="exitOverlayState">LIVE  NO DATA</div>
+                            <div class="live-overlay__line" id="exitOverlayPlate">PLATE: —</div>
+                            <div class="live-overlay__line" id="exitOverlayConfidence">DET —  OCR —</div>
+                            <div class="live-overlay__line" id="exitOverlayFps">FPS — / —</div>
+                            <div class="live-overlay__line" id="exitOverlayLatency">LAT —</div>
+                        </div>
+                        <div class="frame-placeholder-shell" id="exitPlaceholder">
+                            <div class="frame-placeholder-top">
+                                <span class="frame-placeholder-meta" id="exitPlaceholderRole">Exit Camera</span>
+                                <span class="frame-placeholder-state" id="exitPlaceholderState">Idle</span>
+                            </div>
+                            <div class="frame-placeholder-center">
+                                <div class="frame-placeholder-title" id="exitPlaceholderTitle">No live feed yet</div>
+                                <div class="frame-placeholder-note" id="exitPlaceholderNote">Press Start to begin capture</div>
+                            </div>
+                            <div class="frame-placeholder-bottom">
+                                <span class="frame-placeholder-source" id="exitPlaceholderSource">Source: —</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <details class="compact-details compact-details--workspace">
+                    <summary>Show Workspace Telemetry</summary>
+                    <div class="workspace-meta-grid" aria-label="Workspace Telemetry">
+                        <div class="metric-cell">
+                            <span class="metric-label">Source Name</span>
+                            <span class="metric-value" id="workspaceSourceName">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">Source Value</span>
+                            <span class="metric-value" id="workspaceSourceValue">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">Frame Size</span>
+                            <span class="metric-value" id="workspaceFrameSize">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">Last Frame</span>
+                            <span class="metric-value" id="workspaceLastFrame">—</span>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <aside class="workspace-recent" aria-label="Recent Recognitions">
+                <div class="workspace-recent-head">
+                    <h3 class="panel-heading panel-heading--flush">Recent Recognitions</h3>
+                    <button id="workspaceViewAllBtn" type="button" class="workspace-link-btn">View All</button>
+                </div>
+                <ul class="workspace-recent-list" id="workspaceRecentList" aria-live="polite">
+                    <li class="workspace-recent-empty">Waiting for events…</li>
+                </ul>
+            </aside>
+        </div>
+    </section>
+
+    <aside class="sidebar-stack" aria-label="Recognition Summary">
+        <section class="panel recognition-panel">
+            <div class="panel-heading-row">
+                <h2 class="panel-heading">Recognition Result</h2>
+                <div class="recognition-head-badges">
+                    <span class="badge" id="recognitionStateBadge">NO DATA</span>
+                    <span class="badge" id="vehicleLookupBadge">UNREGISTERED</span>
+                </div>
+            </div>
+
+            <div class="frame crop-frame">
+                <img id="cropPreview" alt="Cropped plate region" hidden>
+                <span class="frame-placeholder" id="cropPlaceholder">No plate detected</span>
+            </div>
+
+            <div class="plate-display empty" id="plateDisplay">Waiting for input</div>
+
+            <section class="profile-lookup" aria-label="Vehicle Registration Lookup">
+                <div class="profile-lookup__identity">
+                    <div class="profile-avatar" id="vehicleAvatar" data-initials="--" aria-hidden="true"></div>
+                    <div class="profile-lookup__identity-copy">
+                        <div class="profile-lookup__owner" id="vehicleOwnerName">Visitor / Unregistered</div>
+                        <p class="profile-lookup__meta" id="vehicleProfileMeta">No linked vehicle profile yet.</p>
+                        <div class="profile-lookup__support">
+                            <span id="vehicleOwnerRole">Visitor</span>
+                            <span id="vehicleOwnerAffiliation">No campus profile</span>
+                            <span id="vehicleOwnerReference">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <section class="inspector-section">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Vehicle Information</h3>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">Type</span>
+                        <span class="data-value" id="vehicleTypeValue">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">Make / Model</span>
+                        <span class="data-value" id="vehicleMakeModelValue">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">Color</span>
+                        <span class="data-value" id="vehicleColorValue">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">OR / CR No.</span>
+                        <span class="data-value" id="vehicleRegistrationDocValue">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">Registration Status</span>
+                        <span class="data-value" id="vehicleStatusValue">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">Valid Until</span>
+                        <span class="data-value" id="vehicleExpiryValue">—</span>
+                    </div>
+                </section>
+
+                <section class="inspector-section">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Documents</h3>
+                    </div>
+                    <ul class="document-list" id="vehicleDocumentsList">
+                        <li class="document-list__empty">No document metadata</li>
+                    </ul>
+                </section>
+
+                <div class="visually-hidden">
+                    <span id="vehicleIdValue">—</span>
+                    <span id="vehicleCategoryValue">—</span>
+                    <span id="vehicleSummaryValue">—</span>
+                    <span id="vehicleManualCheckValue">—</span>
+                    <span id="vehicleDocumentsValue">—</span>
+                    <span id="vehicleNotesValue">—</span>
+                </div>
+            </section>
+
+            <details class="compact-details compact-details--recognition">
+                <summary>Confidence Scores</summary>
+                <div class="data-row">
+                    <span class="data-label">Det. Confidence</span>
+                    <span class="data-value" id="detConfidence">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">OCR Confidence</span>
+                    <span class="data-value" id="ocrConfidence">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Stable Repetitions</span>
+                    <span class="data-value" id="stableOccurrences">—</span>
+                </div>
+            </details>
+
+            <details class="compact-details compact-details--recognition">
+                <summary>Session Information</summary>
+                <div class="data-row">
+                    <span class="data-label">Session Decision</span>
+                    <span class="data-value" id="sessionDecision">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Decision Reason</span>
+                    <span class="data-value" id="sessionDecisionReason">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Detector</span>
+                    <span class="data-value" id="detectorMode">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">OCR Engine</span>
+                    <span class="data-value" id="ocrMode">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Timestamp</span>
+                    <span class="data-value" id="resultTime">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Source</span>
+                    <span class="data-value" id="resultSource">—</span>
+                </div>
+                <div class="profile-lookup__history">
+                    <span class="data-label">Recent Gate History</span>
+                    <ul class="profile-history-list" id="vehicleHistoryList">
+                        <li>No recent history</li>
+                    </ul>
+                </div>
+            </details>
+
+            <section class="inspector-section inspector-section--actions" aria-label="Actions">
+                <div class="panel-heading-row panel-heading-row--compact">
+                    <h3 class="panel-heading panel-heading--flush">Actions</h3>
+                </div>
+                <div class="btn-row btn-row--actions">
+                    <button
+                        id="viewProfileBtn"
+                        type="button"
+                        class="btn-primary action-link is-disabled"
+                        aria-disabled="true"
+                    >
+                        View Profile
+                    </button>
+                    <button id="manualOverrideBtn" type="button" class="btn-secondary" disabled>Manual Override</button>
+                </div>
+            </section>
+        </section>
+    </aside>
+</main>

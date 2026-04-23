@@ -4,6 +4,8 @@
 
 This document is the full working plan for Phase 1 of the project.
 
+Status note: Phase 1 is already largely complete in this repository. Keep this document as a recognition-quality planning reference and historical baseline.
+
 Phase 1 is the recognition-readiness phase. Its job is to prove that the current detector-plus-OCR pipeline is strong enough to support the later campus entry and exit system.
 
 This phase should answer these questions clearly:
@@ -11,7 +13,7 @@ This phase should answer these questions clearly:
 - how good is the detector
 - how good is the OCR stage
 - how good is the full end-to-end pipeline
-- what error patterns remain before session tracking is added
+- what error patterns remain before or while session tracking is hardened
 
 ## Phase 1 Goal
 
@@ -28,7 +30,7 @@ At the end of Phase 1, the team should have:
 - baseline metrics for reporting
 - a short list of recognition weaknesses to improve later
 
-Phase 1 should not yet focus on entry and exit session tracking. That belongs to later phases.
+Phase 1 originally did not focus on entry and exit session tracking. That capability is now implemented; this plan remains focused on recognition-quality improvements.
 
 ## Scope
 
@@ -42,7 +44,7 @@ Included in Phase 1:
 - metric reporting
 - documentation of findings
 
-Not included in Phase 1:
+Originally not included in Phase 1 planning (now implemented elsewhere):
 
 - dual-camera workflow
 - session service
@@ -95,7 +97,7 @@ Phase 1 is successful when all of the following are complete:
 
 At the end of Phase 1, the repo or outputs folder should contain:
 
-- trained detector weights in `models/detector/best.pt` or an equivalent saved experiment output
+- trained detector weights in `models/detector/yolo26nbest.pt` or an equivalent saved experiment output
 - Ultralytics training results and plots
 - OCR predictions CSV files for at least validation and test
 - end-to-end evaluation CSV
@@ -115,7 +117,7 @@ Phase 1 is best executed in four workstreams:
 
 ### Objective
 
-Fine-tune the YOLO detector from a pretrained checkpoint and produce a reliable `best.pt` baseline.
+Fine-tune the YOLO detector from a pretrained checkpoint and produce a reliable `yolo26nbest.pt` baseline.
 
 ### Inputs
 

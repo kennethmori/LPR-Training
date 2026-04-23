@@ -5,28 +5,31 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-import cv2
 import numpy as np
 
-from src.core.cropper import annotate_detection, crop_plate, preprocess_for_ocr, resize_for_ocr
-
-
-def _empty_ocr_result(engine_mode: str) -> dict[str, Any]:
-    return {
-        "raw_text": "",
-        "cleaned_text": "",
-        "confidence": 0.0,
-        "engine": engine_mode,
-    }
-
-
-def _empty_stable_result() -> dict[str, Any]:
-    return {
-        "value": "",
-        "confidence": 0.0,
-        "occurrences": 0,
-        "accepted": False,
-    }
+from src.core.bbox import bbox_center_distance_ratio, bbox_iou
+from src.core.cropper import (
+    annotate_detection,
+    crop_plate,
+    preprocess_for_ocr,
+    rectify_plate_for_ocr,
+    resize_for_ocr,
+)
+from src.services.tracking_backend import (
+    TRACKER_RUNTIME_EXCEPTIONS,
+    bbox_to_tracker_box,
+    coerce_bbox,
+    tracker_box_to_bbox,
+    tracker_factory,
+)
+from src.services.tracking_events import build_tracking_recognition_event, track_overlay_text
+from src.services.tracking_payloads import (
+    build_no_detection_payload,
+    build_success_payload,
+    empty_ocr_result,
+    empty_stable_result,
+)
+from src.services.tracking_quality import compute_sharpness, score_crop
 
 
 @dataclass
@@ -92,13 +95,17 @@ class PlateTrackingService:
             self._int_setting("stop_ocr_after_stable_occurrences", 3),
             1,
         )
+        self.recognition_event_min_stable_occurrences = max(
+            self._int_setting("recognition_event_min_stable_occurrences", 1),
+            1,
+        )
         self.enable_tracking_overlay = bool(self.settings.get("enable_tracking_overlay", True))
         self.tracker_backend = str(self.settings.get("tracker_backend", "auto") or "auto").lower()
         self.tracker_backend_name = "none"
         self.next_track_id = 1
         self.primary_track_id: int | None = None
         self.tracks: dict[int, PlateTrack] = {}
-        self.latest_camera_stable_result = _empty_stable_result()
+        self.latest_camera_stable_result = empty_stable_result()
 
     def reset(self) -> None:
         for track_id in list(self.tracks.keys()):
@@ -106,7 +113,7 @@ class PlateTrackingService:
         self.tracks.clear()
         self.primary_track_id = None
         self.next_track_id = 1
-        self.latest_camera_stable_result = _empty_stable_result()
+        self.latest_camera_stable_result = empty_stable_result()
 
     def process_frame(
         self,
@@ -133,7 +140,7 @@ class PlateTrackingService:
         if primary_track is not None:
             self._refresh_track_crop(frame, primary_track)
             total_ocr_time_ms = self._maybe_run_ocr(primary_track, frame_index)
-            self.latest_camera_stable_result = dict(primary_track.stable_result or _empty_stable_result())
+            self.latest_camera_stable_result = dict(primary_track.stable_result or empty_stable_result())
 
         annotated = self._annotate_tracks(frame)
         recognition_event = None
@@ -148,10 +155,15 @@ class PlateTrackingService:
 
         pipeline_time_ms = round((time.perf_counter() - started) * 1000, 2)
         if primary_track is None:
-            payload = self._build_no_detection_payload(
+            payload = build_no_detection_payload(
+                detector_mode=self.pipeline.detector.mode,
+                ocr_mode=self.pipeline.ocr_engine.mode,
+                camera_role=self.camera_role,
+                source_name=self.source_name,
                 timestamp=timestamp,
                 detection_time_ms=detection_time_ms,
                 pipeline_time_ms=pipeline_time_ms,
+                stable_result=self.latest_camera_stable_result,
             )
             if detector_ran and bool(self.pipeline.settings.get("log_no_detection_frames", False)):
                 self.pipeline.logging_service.append(
@@ -159,7 +171,9 @@ class PlateTrackingService:
                         "timestamp": timestamp,
                         "source_type": "camera",
                         "camera_role": self.camera_role,
+                        "source_name": self.source_name,
                         "plate_detected": False,
+                        "plate_number": self.latest_camera_stable_result.get("value", ""),
                         "detector_confidence": 0.0,
                         "ocr_confidence": 0.0,
                         "raw_text": "",
@@ -171,8 +185,18 @@ class PlateTrackingService:
             return payload, annotated, None
 
         return (
-            self._build_success_payload(
-                track=primary_track,
+            build_success_payload(
+                detector_mode=self.pipeline.detector.mode,
+                ocr_mode=self.pipeline.ocr_engine.mode,
+                camera_role=self.camera_role,
+                source_name=self.source_name,
+                detection={
+                    "bbox": dict(primary_track.bbox),
+                    "confidence": primary_track.detector_confidence,
+                    "label": primary_track.label,
+                },
+                ocr_result=dict(primary_track.ocr_result or empty_ocr_result(self.pipeline.ocr_engine.mode)),
+                stable_result=dict(primary_track.stable_result or empty_stable_result()),
                 timestamp=timestamp,
                 detection_time_ms=detection_time_ms,
                 ocr_time_ms=round(total_ocr_time_ms, 2),
@@ -197,11 +221,11 @@ class PlateTrackingService:
                 continue
             try:
                 ok, tracked_box = track.tracker.update(frame)
-            except Exception:
+            except TRACKER_RUNTIME_EXCEPTIONS:
                 ok, tracked_box = False, None
             if not ok or tracked_box is None:
                 continue
-            bbox = self._tracker_box_to_bbox(tracked_box, frame.shape)
+            bbox = tracker_box_to_bbox(tracked_box, frame.shape)
             if bbox is None:
                 continue
             track.bbox = bbox
@@ -244,8 +268,8 @@ class PlateTrackingService:
                 bbox = detection.get("bbox")
                 if not isinstance(bbox, dict):
                     continue
-                iou = self.pipeline._bbox_iou(track.bbox, bbox)
-                center_distance = self.pipeline._bbox_center_distance_ratio(track.bbox, bbox)
+                iou = bbox_iou(track.bbox, bbox)
+                center_distance = bbox_center_distance_ratio(track.bbox, bbox)
                 if iou < self.match_iou_threshold and center_distance > self.match_center_distance_ratio:
                     continue
                 score = (iou * 2.0) + max(0.0, 1.0 - center_distance)
@@ -271,7 +295,7 @@ class PlateTrackingService:
     ) -> PlateTrack:
         track_id = self.next_track_id
         self.next_track_id += 1
-        bbox = self._coerce_bbox(detection.get("bbox"))
+        bbox = coerce_bbox(detection.get("bbox"))
         label = str(detection.get("label", "plate_number"))
         confidence = float(detection.get("confidence", 0.0) or 0.0)
         track = PlateTrack(
@@ -283,8 +307,8 @@ class PlateTrackingService:
             last_seen_frame_index=frame_index,
             last_detection_frame_index=frame_index,
             tracker=self._init_tracker(frame, bbox),
-            ocr_result=_empty_ocr_result(self.pipeline.ocr_engine.mode),
-            stable_result=_empty_stable_result(),
+            ocr_result=empty_ocr_result(self.pipeline.ocr_engine.mode),
+            stable_result=empty_stable_result(),
         )
         return track
 
@@ -295,7 +319,7 @@ class PlateTrackingService:
         frame: np.ndarray,
         frame_index: int,
     ) -> None:
-        track.bbox = self._coerce_bbox(detection.get("bbox"))
+        track.bbox = coerce_bbox(detection.get("bbox"))
         track.label = str(detection.get("label", track.label))
         track.detector_confidence = float(detection.get("confidence", track.detector_confidence) or 0.0)
         track.last_seen_frame_index = frame_index
@@ -351,12 +375,13 @@ class PlateTrackingService:
         if crop is None or crop.size == 0:
             return
 
+        crop = rectify_plate_for_ocr(crop, self.pipeline.settings)
         width = max(track.bbox["x2"] - track.bbox["x1"], 0)
         height = max(track.bbox["y2"] - track.bbox["y1"], 0)
         resized_crop = resize_for_ocr(crop, int(self.pipeline.settings.get("resize_width", 320)))
         ocr_input = preprocess_for_ocr(resized_crop, self.pipeline.settings)
-        sharpness = self._compute_sharpness(crop)
-        crop_score = self._score_crop(width, height, sharpness, track.detector_confidence)
+        sharpness = compute_sharpness(crop)
+        crop_score = score_crop(width, height, sharpness, track.detector_confidence)
 
         track.last_crop = crop
         track.last_resized_crop = resized_crop
@@ -404,7 +429,9 @@ class PlateTrackingService:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source_type": "camera",
                 "camera_role": self.camera_role,
+                "source_name": self.source_name,
                 "plate_detected": True,
+                "plate_number": stable_result.get("value", "") or cleaned_text,
                 "detector_confidence": track.detector_confidence,
                 "ocr_confidence": track.ocr_result["confidence"],
                 "raw_text": track.ocr_result["raw_text"],
@@ -443,120 +470,30 @@ class PlateTrackingService:
         annotated: np.ndarray,
         timestamp: str,
     ) -> dict[str, Any] | None:
-        stable_value = str(track.stable_result.get("value", "") or "")
-        occurrences = int(track.stable_result.get("occurrences", 0) or 0)
-        if not stable_value or not bool(track.stable_result.get("accepted")):
-            return None
-        if (
-            stable_value == track.last_emitted_plate_number
-            and occurrences <= int(track.last_emitted_occurrences)
-        ):
-            return None
-
-        crop_path: str | None = None
-        annotated_path: str | None = None
-        crop_image = track.best_resized_crop if track.best_resized_crop is not None else track.last_resized_crop
-        if crop_image is not None and self.pipeline._should_save_event_images(
-            source_type="camera",
-            stream_key=self.camera_role,
-            plate_number=stable_value,
-        ):
-            crop_path, annotated_path = self.pipeline._save_event_images(
-                timestamp=timestamp,
-                camera_role=self.camera_role,
-                plate_number=stable_value,
-                annotated=annotated,
-                crop=crop_image,
-            )
-
-        event = self.pipeline._build_recognition_event(
-            timestamp=timestamp,
+        return build_tracking_recognition_event(
+            pipeline=self.pipeline,
             camera_role=self.camera_role,
             source_name=self.source_name,
-            source_type="camera",
-            raw_text=str(track.ocr_result.get("raw_text", "")),
-            cleaned_text=str(track.ocr_result.get("cleaned_text", "")),
-            stable_text=stable_value,
-            plate_number=stable_value,
-            detector_confidence=track.detector_confidence,
-            ocr_confidence=float(track.ocr_result.get("confidence", 0.0) or 0.0),
-            ocr_engine=str(track.ocr_result.get("engine", self.pipeline.ocr_engine.mode)),
-            crop_path=crop_path,
-            annotated_frame_path=annotated_path,
-            is_stable=True,
-            stable_occurrences=occurrences,
+            track=track,
+            annotated=annotated,
+            timestamp=timestamp,
+            min_stable_occurrences=self.recognition_event_min_stable_occurrences,
         )
-        track.last_emitted_plate_number = stable_value
-        track.last_emitted_occurrences = occurrences
-        return event
-
-    def _build_no_detection_payload(
-        self,
-        timestamp: str,
-        detection_time_ms: float,
-        pipeline_time_ms: float,
-    ) -> dict[str, Any]:
-        return {
-            "source_type": "camera",
-            "camera_role": self.camera_role,
-            "source_name": self.source_name,
-            "status": "no_detection",
-            "message": "No tracked license plate available.",
-            "detector_mode": self.pipeline.detector.mode,
-            "ocr_mode": self.pipeline.ocr_engine.mode,
-            "detection": None,
-            "ocr": None,
-            "stable_result": dict(self.latest_camera_stable_result),
-            "plate_detected": False,
-            "timestamp": timestamp,
-            "timings_ms": {
-                "detector": round(detection_time_ms, 2),
-                "ocr": 0.0,
-                "pipeline": pipeline_time_ms,
-            },
-            "recognition_event": None,
-        }
-
-    def _build_success_payload(
-        self,
-        track: PlateTrack,
-        timestamp: str,
-        detection_time_ms: float,
-        ocr_time_ms: float,
-        pipeline_time_ms: float,
-        recognition_event: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        return {
-            "source_type": "camera",
-            "camera_role": self.camera_role,
-            "source_name": self.source_name,
-            "status": "success",
-            "message": "Plate tracked and OCR scheduled selectively.",
-            "detector_mode": self.pipeline.detector.mode,
-            "ocr_mode": self.pipeline.ocr_engine.mode,
-            "detection": {
-                "bbox": dict(track.bbox),
-                "confidence": track.detector_confidence,
-                "label": track.label,
-            },
-            "ocr": dict(track.ocr_result or _empty_ocr_result(self.pipeline.ocr_engine.mode)),
-            "stable_result": dict(track.stable_result or _empty_stable_result()),
-            "plate_detected": True,
-            "timestamp": timestamp,
-            "timings_ms": {
-                "detector": round(detection_time_ms, 2),
-                "ocr": round(ocr_time_ms, 2),
-                "pipeline": pipeline_time_ms,
-            },
-            "recognition_event": recognition_event,
-        }
 
     def _annotate_tracks(self, frame: np.ndarray) -> np.ndarray:
         if not self.enable_tracking_overlay:
             return frame.copy()
         annotated = frame.copy()
-        for track in self.tracks.values():
-            overlay_text = self._track_overlay_text(track)
+        primary_track = self.tracks.get(self.primary_track_id) if self.primary_track_id is not None else None
+        tracks_to_draw = [primary_track] if primary_track is not None else []
+
+        if not tracks_to_draw and self.tracks:
+            tracks_to_draw = [max(self.tracks.values(), key=self._track_priority)]
+
+        for track in tracks_to_draw:
+            if track is None:
+                continue
+            overlay_text = track_overlay_text(track)
             annotated = annotate_detection(
                 image=annotated,
                 bbox=track.bbox,
@@ -566,16 +503,6 @@ class PlateTrackingService:
             )
         return annotated
 
-    @staticmethod
-    def _track_overlay_text(track: PlateTrack) -> str:
-        stable_value = str(track.stable_result.get("value", "") or "")
-        if stable_value:
-            return stable_value
-        cleaned_text = str(track.ocr_result.get("cleaned_text", "") or "")
-        if cleaned_text:
-            return cleaned_text
-        return str(track.ocr_result.get("raw_text", "") or "")
-
     def _track_stream_key(self, track_id: int) -> str:
         return f"{self.camera_role}:track:{track_id}"
 
@@ -583,10 +510,10 @@ class PlateTrackingService:
         tracker = self._create_tracker()
         if tracker is None:
             return None
-        tracker_box = self._bbox_to_tracker_box(bbox)
+        tracker_box = bbox_to_tracker_box(bbox)
         try:
             tracker.init(frame, tracker_box)
-        except Exception:
+        except TRACKER_RUNTIME_EXCEPTIONS:
             return None
         return tracker
 
@@ -602,86 +529,17 @@ class PlateTrackingService:
             backend_candidates = [self.tracker_backend]
 
         for backend in backend_candidates:
-            factory = self._tracker_factory(backend)
+            factory = tracker_factory(backend)
             if factory is None:
                 continue
             try:
                 tracker = factory()
-            except Exception:
+            except TRACKER_RUNTIME_EXCEPTIONS:
                 continue
             self.tracker_backend_name = backend
             return tracker
         self.tracker_backend_name = "none"
         return None
-
-    @staticmethod
-    def _tracker_factory(backend: str) -> Any | None:
-        legacy = getattr(cv2, "legacy", None)
-        candidates = {
-            "csrt": [
-                getattr(cv2, "TrackerCSRT_create", None),
-                getattr(legacy, "TrackerCSRT_create", None) if legacy is not None else None,
-            ],
-            "kcf": [
-                getattr(cv2, "TrackerKCF_create", None),
-                getattr(legacy, "TrackerKCF_create", None) if legacy is not None else None,
-            ],
-            "mosse": [
-                getattr(cv2, "TrackerMOSSE_create", None),
-                getattr(legacy, "TrackerMOSSE_create", None) if legacy is not None else None,
-            ],
-        }
-        for factory in candidates.get(backend, []):
-            if callable(factory):
-                return factory
-        return None
-
-    @staticmethod
-    def _bbox_to_tracker_box(bbox: dict[str, int]) -> tuple[float, float, float, float]:
-        width = max(int(bbox["x2"]) - int(bbox["x1"]), 1)
-        height = max(int(bbox["y2"]) - int(bbox["y1"]), 1)
-        return (float(bbox["x1"]), float(bbox["y1"]), float(width), float(height))
-
-    @staticmethod
-    def _tracker_box_to_bbox(box: Any, image_shape: tuple[int, ...]) -> dict[str, int] | None:
-        try:
-            x, y, width, height = box
-        except Exception:
-            return None
-
-        image_height, image_width = image_shape[:2]
-        x1 = max(int(round(x)), 0)
-        y1 = max(int(round(y)), 0)
-        x2 = min(int(round(x + width)), image_width)
-        y2 = min(int(round(y + height)), image_height)
-        if x2 <= x1 or y2 <= y1:
-            return None
-        return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
-
-    @staticmethod
-    def _coerce_bbox(value: Any) -> dict[str, int]:
-        bbox = value if isinstance(value, dict) else {}
-        return {
-            "x1": int(bbox.get("x1", 0)),
-            "y1": int(bbox.get("y1", 0)),
-            "x2": int(bbox.get("x2", 0)),
-            "y2": int(bbox.get("y2", 0)),
-        }
-
-    @staticmethod
-    def _compute_sharpness(image: np.ndarray | None) -> float:
-        if image is None or getattr(image, "size", 0) == 0:
-            return 0.0
-        if image.ndim == 3:
-            grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            grayscale = image
-        return float(cv2.Laplacian(grayscale, cv2.CV_64F).var())
-
-    @staticmethod
-    def _score_crop(width: int, height: int, sharpness: float, detector_confidence: float) -> float:
-        area_score = float(max(width, 0) * max(height, 0)) / 100.0
-        return area_score + sharpness + (float(detector_confidence) * 100.0)
 
     def _int_setting(self, key: str, default: int) -> int:
         value = self.settings.get(key, default)

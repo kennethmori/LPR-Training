@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_app_header %}
+
+{% block meta_description %}USM License Plate Recognition System admin login{% endblock %}
+{% block title %}{{ app_title }} - Admin Login{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/static/css/pages/settings.css?v={{ server_time }}">
+{% endblock %}
+
+{% block page %}
+    <div class="page-shell">
+        {{ render_app_header(
+            app_title,
+            university,
+            "Admin access is required to open the dashboard and settings workspace.",
+            "Protected operator access",
+            "login"
+        ) }}
+
+        <main class="login-layout" id="mainContent">
+            <section class="panel login-panel" aria-label="Admin Login">
+                <div class="panel-heading-row">
+                    <h2 class="panel-heading">Sign In</h2>
+                    <span class="badge {% if error_message %}error{% endif %}">{% if error_message %}Error{% else %}Protected{% endif %}</span>
+                </div>
+
+                <p class="helper-copy login-copy-top">Use the configured admin credentials to continue.</p>
+
+                {% if error_message %}
+                <p class="helper-copy login-error-msg" role="alert">{{ error_message }}</p>
+                {% endif %}
+
+                <form method="post" action="/login" class="controls-group login-form">
+                    <input type="hidden" name="next" value="{{ next_path }}">
+
+                    <label for="username">Admin Username</label>
+                    <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+
+                    <label for="password">Admin Password</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+                    <div class="login-submit-wrap">
+                        <button type="submit" class="btn-primary btn-full">Sign In</button>
+                    </div>
+                </form>
+            </section>
+        </main>
+    </div>
+{% endblock %}

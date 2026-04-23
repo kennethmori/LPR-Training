@@ -17,6 +17,7 @@ Start here:
 - [known-issues.md](known-issues.md): current limitations and practical caveats
 - [backend-implementation-prompt.md](backend-implementation-prompt.md): reference prompt for rebuilding or extending the backend/session layer
 - [frontend-implementation-prompt.md](frontend-implementation-prompt.md): reference prompt for rebuilding or extending the operator dashboard
+- [frontend-maintainability.md](frontend-maintainability.md): vanilla JS dashboard maintainability rules, rendering patterns, and extension workflow
 - [full-system-implementation-prompt.md](full-system-implementation-prompt.md): reference prompt for large rebuilds or cross-cutting extensions
 - [phase-1-plan.md](phase-1-plan.md): detector, OCR, and end-to-end evaluation plan for the recognition-quality side of the project
 

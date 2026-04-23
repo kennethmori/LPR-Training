@@ -26,6 +26,7 @@ The repository already includes these foundations:
 - FastAPI-based dashboard and API routes
 - SQLite-backed recognition-event and vehicle-session persistence
 - unmatched-exit handling, moderation routes, and performance snapshots
+- automated tests for detector, pipeline, session, tracking, registry, and key API settings/session routes
 - prepared OCR evaluation data and detector dataset splits
 
 Current data snapshot in the workspace:
@@ -55,7 +56,7 @@ That core flow is already present in the current codebase. The next milestone is
 
 The best next-stage order for this repository is:
 
-1. Add automated tests for session, storage, and API behavior
+1. Expand automated coverage for long-running camera loops, video uploads, and end-to-end dual-role flows
 2. Tighten API response typing and schema alignment
 3. Add database lifecycle support such as migrations or versioning
 4. Improve moderation and operator-facing workflows
@@ -77,16 +78,16 @@ This phase is about proving that the existing behavior is correct and stable.
 
 ### Tasks
 
-- add unit tests for `SessionService`
-- add storage tests for schema initialization, CRUD behavior, and moderation flows
-- add API tests for status, camera, session, event, and moderation endpoints
-- add test fixtures for realistic `entry` then `exit` event sequences
+- expand `SessionService` and storage-focused tests for edge cases (cooldown, near-match ambiguity, unmatched exits)
+- add integration-style tests for camera start or stop behavior and role switching with mocked sources
+- extend API tests for video upload, moderation, and settings failure paths
+- keep reusable fixtures for realistic `entry` then `exit` sequences and negative variants
 
 ### Deliverables
 
-- top-level `tests/` directory
-- passing tests for core session and storage behavior
-- a short verification checklist for local runtime workflows
+- broader `tests/` coverage across service and API integration paths
+- documented repeatable test command for local runs and CI: `python -m unittest discover -s tests -p "test_*.py"`
+- a short verification checklist that combines automated checks and targeted manual runtime checks
 
 ## Phase 2: API And Config Hardening
 

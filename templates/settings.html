@@ -1,31 +1,27 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ app_title }} - Settings</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="page-shell settings-page-shell">
-        <header class="header" aria-label="Settings Header">
-            <div>
-                <p class="header-eyebrow">{{ university }}</p>
-                <h1>Application Settings</h1>
-                <p class="header-subtitle">Configure camera inputs, recognition rules, and detector runtime for the recognition pipeline.</p>
-            </div>
-            <div class="header-meta">
-                <p class="header-note">Configuration workspace</p>
-                <div class="header-actions">
-                    <a href="/" class="header-settings-btn badge" aria-label="Back to dashboard">
-                        Back to Dashboard
-                    </a>
-                    <span class="badge" id="settingsStateBadge">CONFIG</span>
-                </div>
-            </div>
-        </header>
+{% extends "base.html" %}
+{% from "_macros.html" import render_app_header %}
 
-        <main class="settings-page-main">
+{% block meta_description %}USM License Plate Recognition System settings workspace{% endblock %}
+{% block title %}{{ app_title }} - Settings{% endblock %}
+{% block body_class %}page-settings{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/static/css/pages/settings.css?v={{ server_time }}">
+{% endblock %}
+
+{% block page %}
+    <div class="page-shell settings-page-shell">
+        {{ render_app_header(
+            app_title,
+            university,
+            "Configuration workspace for the recognition pipeline and camera inputs.",
+            "Configuration workspace",
+            "settings",
+            auth_enabled=auth_enabled,
+            status_badge_id="settingsStateBadge",
+            status_badge_text="CONFIG"
+        ) }}
+
+        <main class="settings-page-main" id="mainContent">
             <section class="panel settings-panel settings-panel-page" aria-label="Application Settings">
                 <div class="settings-grid">
                     <div class="settings-card">
@@ -40,10 +36,10 @@
 
                         <div class="settings-actions">
                             <button id="saveCameraSettingsBtn" type="button" class="btn-secondary">Save Camera Settings</button>
-                            <span class="settings-updated" id="cameraSettingsUpdatedAt">Last updated: —</span>
+                            <span class="settings-updated" id="cameraSettingsUpdatedAt" aria-live="polite">Last updated: —</span>
                         </div>
 
-                        <p class="helper-copy" id="cameraSettingsNote">No settings loaded yet.</p>
+                        <p class="helper-copy" id="cameraSettingsNote" aria-live="polite">No settings loaded yet.</p>
                     </div>
 
                     <div class="settings-card">
@@ -65,7 +61,7 @@
 
                     <div class="settings-card">
                         <h2 class="panel-heading panel-heading--flush">Recognition Acceptance</h2>
-                        <p class="helper-copy settings-copy">Lower these to accept weaker reads, or raise them to be stricter.</p>
+                        <p class="helper-copy settings-copy">This page now controls both the final acceptance rules and the live thresholds that feed them.</p>
 
                         <label for="minDetectorConfidence">Min Detector Confidence</label>
                         <input id="minDetectorConfidence" name="min_detector_confidence" type="number" min="0" max="1" step="0.01" placeholder="0.50">
@@ -76,31 +72,73 @@
                         <label for="minStableOccurrences">Min Stable Repetitions</label>
                         <input id="minStableOccurrences" name="min_stable_occurrences" type="number" min="1" step="1" placeholder="3">
 
+                        <label for="detectorConfidenceThreshold">Live Detector Threshold</label>
+                        <input id="detectorConfidenceThreshold" name="detector_confidence_threshold" type="number" min="0" max="1" step="0.01" placeholder="0.60">
+
+                        <label for="detectorIouThreshold">Live NMS IoU Threshold</label>
+                        <input id="detectorIouThreshold" name="detector_iou_threshold" type="number" min="0" max="1" step="0.01" placeholder="0.40">
+
+                        <label for="detectorMaxDetections">Live Max Detections</label>
+                        <input id="detectorMaxDetections" name="detector_max_detections" type="number" min="1" step="1" placeholder="1">
+
+                        <label for="minDetectorConfidenceForOcr">OCR Trigger Detector Confidence</label>
+                        <input id="minDetectorConfidenceForOcr" name="min_detector_confidence_for_ocr" type="number" min="0" max="1" step="0.01" placeholder="0.70">
+
+                        <label for="minSharpnessForOcr">OCR Min Sharpness</label>
+                        <input id="minSharpnessForOcr" name="min_sharpness_for_ocr" type="number" min="0" step="1" placeholder="55">
+
+                        <label for="ocrCooldownSeconds">OCR Cooldown Seconds</label>
+                        <input id="ocrCooldownSeconds" name="ocr_cooldown_seconds" type="number" min="0" step="0.05" placeholder="0.25">
+
                         <label for="ocrCpuThreads">OCR CPU Cores</label>
                         <input id="ocrCpuThreads" name="ocr_cpu_threads" type="number" min="1" step="1" placeholder="8">
 
                         <div class="settings-actions">
                             <button id="saveRecognitionSettingsBtn" type="button" class="btn-secondary">Save Recognition Settings</button>
-                            <span class="settings-updated" id="recognitionSettingsUpdatedAt">Last updated: —</span>
+                            <span class="settings-updated" id="recognitionSettingsUpdatedAt" aria-live="polite">Last updated: —</span>
                         </div>
 
-                        <p class="helper-copy" id="recognitionSettingsNote">No recognition settings loaded yet.</p>
+                        <p class="helper-copy" id="recognitionSettingsNote" aria-live="polite">No recognition settings loaded yet.</p>
                     </div>
 
                     <div class="settings-card">
-                        <h2 class="panel-heading panel-heading--flush">Current Acceptance Rules</h2>
+                        <h2 class="panel-heading panel-heading--flush">Current Recognition Rules</h2>
 
                         <div class="data-row">
-                            <span class="data-label">Detector Min</span>
+                            <span class="data-label">Session Detector Min</span>
                             <span class="data-value" id="settingsDetectorThreshold">—</span>
                         </div>
                         <div class="data-row">
-                            <span class="data-label">OCR Min</span>
+                            <span class="data-label">Session OCR Min</span>
                             <span class="data-value" id="settingsOcrThreshold">—</span>
                         </div>
                         <div class="data-row">
                             <span class="data-label">Stable Repetitions</span>
                             <span class="data-value" id="settingsStableOccurrences">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Live Detector Threshold</span>
+                            <span class="data-value" id="settingsLiveDetectorThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Live NMS IoU</span>
+                            <span class="data-value" id="settingsDetectorIouThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Live Max Detections</span>
+                            <span class="data-value" id="settingsDetectorMaxDetections">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR Trigger Detector Min</span>
+                            <span class="data-value" id="settingsDetectorForOcrThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR Min Sharpness</span>
+                            <span class="data-value" id="settingsSharpnessThreshold">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR Cooldown Seconds</span>
+                            <span class="data-value" id="settingsOcrCooldownSeconds">—</span>
                         </div>
                         <div class="data-row">
                             <span class="data-label">OCR CPU Cores</span>
@@ -110,23 +148,25 @@
 
                     <div class="settings-card">
                         <h2 class="panel-heading panel-heading--flush">Detector Runtime</h2>
-                        <p class="helper-copy settings-copy">Switch between the current Ultralytics detector and an ONNX Runtime export.</p>
+                        <p class="helper-copy settings-copy">Switch between the current Ultralytics detector and an ONNX Runtime export, and choose whether ONNX should prefer the DirectML iGPU path or stay CPU-only.</p>
 
-                        <label for="detectorBackend">Detector Backend</label>
-                        <select id="detectorBackend" name="backend">
-                            <option value="ultralytics">Ultralytics (.pt)</option>
-                            <option value="onnxruntime">ONNX Runtime (.onnx)</option>
+                        <label for="detectorModelPath">Detector Model</label>
+                        <select id="detectorModelPath" name="model_path">
+                            <option value="models/detector/yolo26nbest.onnx">models/detector/yolo26nbest.onnx</option>
                         </select>
 
-                        <label for="detectorOnnxPath">ONNX Model Path</label>
-                        <input id="detectorOnnxPath" name="onnx_weights_path" type="text" placeholder="outputs/detector/best.onnx">
+                        <label for="onnxProviderMode">ONNX Provider Mode</label>
+                        <select id="onnxProviderMode" name="onnx_provider_mode">
+                            <option value="prefer_directml">Prefer DirectML iGPU</option>
+                            <option value="cpu_only">CPU Only</option>
+                        </select>
 
                         <div class="settings-actions">
                             <button id="saveDetectorRuntimeBtn" type="button" class="btn-secondary">Save Detector Runtime</button>
-                            <span class="settings-updated" id="detectorRuntimeUpdatedAt">Last updated: —</span>
+                            <span class="settings-updated" id="detectorRuntimeUpdatedAt" aria-live="polite">Last updated: —</span>
                         </div>
 
-                        <p class="helper-copy" id="detectorRuntimeNote">No detector runtime settings loaded yet.</p>
+                        <p class="helper-copy" id="detectorRuntimeNote" aria-live="polite">No detector runtime settings loaded yet.</p>
                     </div>
 
                     <div class="settings-card">
@@ -137,12 +177,24 @@
                             <span class="data-value" id="settingsDetectorBackend">—</span>
                         </div>
                         <div class="data-row">
+                            <span class="data-label">Configured ONNX Mode</span>
+                            <span class="data-value" id="settingsDetectorProviderMode">—</span>
+                        </div>
+                        <div class="data-row">
                             <span class="data-label">ONNX Path</span>
                             <span class="data-value" id="settingsDetectorOnnxPath">—</span>
                         </div>
                         <div class="data-row">
+                            <span class="data-label">Ultralytics Path</span>
+                            <span class="data-value" id="settingsDetectorPtPath">—</span>
+                        </div>
+                        <div class="data-row">
                             <span class="data-label">Runtime Mode</span>
                             <span class="data-value" id="settingsDetectorMode">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Active Providers</span>
+                            <span class="data-value" id="settingsDetectorActiveProviders">—</span>
                         </div>
                         <div class="data-row">
                             <span class="data-label">Ready</span>
@@ -154,6 +206,8 @@
         </main>
     </div>
 
-    <script src="/static/js/settings.js"></script>
-</body>
-</html>
+{% endblock %}
+
+{% block scripts %}
+    <script type="module" src="/static/js/settings.js?v={{ server_time }}"></script>
+{% endblock %}

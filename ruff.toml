@@ -1,0 +1,23 @@
+line-length = 110
+target-version = "py312"
+
+exclude = [
+    ".git",
+    ".tmp",
+    ".venv",
+    "analysis_logs",
+    "asset",
+    "data",
+    "models",
+    "notebooks",
+    "output",
+    "outputs",
+    "static",
+]
+
+[lint]
+select = [
+    "E",
+    "F",
+    "I",
+]

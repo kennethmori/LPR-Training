@@ -34,12 +34,13 @@ Project identity:
 - target workflow: `entry` and `exit` vehicle session tracking
 
 Current implemented backend foundation:
-- single-camera live recognition exists
-- still-image inference exists
-- detector + OCR + post-processing + stabilization are already wired
+- role-aware live recognition exists for `entry` and `exit` cameras
+- still-image and video-upload inference exist
+- detector + OCR + post-processing + stabilization + tracking are already wired
+- session and storage services already persist events, sessions, and unmatched exits in SQLite
 - the runtime currently selects one primary highest-confidence plate result per frame
-- status reporting is honest when detector or OCR is unavailable
-- debug logs are written to JSONL
+- status reporting is honest when detector, OCR, or storage is unavailable
+- debug logs and performance snapshots are written to JSONL
 
 Critical backend rules you must preserve:
 - keep recognition logic separate from session lifecycle logic
@@ -82,13 +83,13 @@ Target local runtime behavior:
 Backend implementation scope:
 
 Phase 1: Role-aware camera architecture
-- refactor the current single-camera assumptions into role-aware handling
+- harden and extend the existing role-aware camera handling
 - support camera roles:
   - `entry`
   - `exit`
 - keep backward compatibility where practical
-- extend `configs/app_settings.yaml` so camera sources are declared by role
-- if needed, introduce a `camera_manager.py` instead of overloading one service too much
+- keep `configs/app_settings.yaml` camera sources declared by role
+- `camera_manager.py` already exists; extend it rather than duplicating camera orchestration logic
 - support role-aware start, stop, stream, status, and latest-result behavior
 
 Phase 2: Stable recognition event contract
@@ -111,7 +112,7 @@ Phase 2: Stable recognition event contract
 - only stable actionable events should reach the session layer
 
 Phase 3: SQLite persistence
-- add durable SQLite storage
+- harden and extend durable SQLite storage
 - use a YAML-configured database path
 - recommended path:
   - `outputs/app_data/plate_events.db`
@@ -123,7 +124,7 @@ Phase 3: SQLite persistence
 - keep the schema simple and explainable
 
 Phase 4: Session service
-- implement `src/services/session_service.py`
+- harden and extend `src/services/session_service.py`
 - responsibilities:
   - receive stable recognition events
   - write recognition events to SQLite
@@ -138,8 +139,8 @@ Phase 4: Session service
   - unmatched exits are logged, not silently dropped
 
 Phase 5: API and schemas
-- extend FastAPI routes and schemas to expose operational system state
-- move toward typed Pydantic response models instead of mostly plain dicts
+- keep FastAPI routes and schemas aligned with operational system state
+- maintain typed Pydantic response models and reduce remaining ad hoc payload shapes
 - target route surface:
   - `GET /`
   - `POST /predict/image`
@@ -182,10 +183,10 @@ Recommended backend files to inspect and likely update:
 - src/api/routes.py
 - src/api/schemas.py
 
-Likely new backend modules:
+Likely backend modules to extend:
 - src/services/session_service.py
-- optionally src/services/storage_service.py
-- optionally src/services/camera_manager.py
+- src/services/storage_service.py
+- src/services/camera_manager.py
 
 Backend verification requirements:
 - verify syntax / import sanity

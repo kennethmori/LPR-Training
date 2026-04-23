@@ -2,165 +2,59 @@
    USM License Plate Recognition System — Dashboard JS
    =================================================================== */
 
-(function () {
-    "use strict";
+"use strict";
 
-    const $ = (id) => document.getElementById(id);
+import { collectDashboardShell } from "./dashboard_dom.js";
+import { createDashboardCameraState } from "./dashboard/camera_state.js";
+import { createDashboardModals } from "./dashboard/modals.js";
+import { createDashboardNavigation } from "./dashboard/navigation.js";
+import { createDashboardRuntime } from "./dashboard/runtime.js";
+import { createDashboardPanels } from "./dashboard_panels.js";
+import { createDashboardApi } from "./dashboard/api.js";
+import { createDashboardStore } from "./dashboard/store.js";
+import {
+    actionBadgeClass,
+    clearImage,
+    dedupeRowsById,
+    eventActionLabel,
+    formatCameraSource,
+    formatClockTime,
+    formatDurationMinutes,
+    formatRelativeTime as baseFormatRelativeTime,
+    formatTime,
+    humanizeDecisionReason,
+    humanizeEventNote,
+    isSessionDecisionAction,
+    isTimestampToday as baseIsTimestampToday,
+    isVideoFile,
+    logSourceLabel,
+    mapCameraStartError,
+    normalizeEventAction,
+    normalizeTextValue,
+    safeInt,
+    safeNum,
+    sessionDecisionSummary,
+    setImageWithFallback,
+    summarizeDocuments,
+    toTitleCaseFromSnake,
+    vehicleLookupBadgeClass,
+    vehicleLookupBadgeText,
+} from "./dashboard_utils.js";
+    const {
+        els,
+        sourceTabs,
+        recordsTabs,
+        sourceTabMap,
+        recordsTabMap,
+        overlayMap,
+    } = collectDashboardShell();
 
-    const els = {
-        statusBadge: $("statusBadge"),
-        overviewUpdated: $("overviewUpdated"),
-        overviewDetectorState: $("overviewDetectorState"),
-        overviewOcrState: $("overviewOcrState"),
-        overviewStorageState: $("overviewStorageState"),
-        overviewSessionState: $("overviewSessionState"),
-        overviewRunningCameras: $("overviewRunningCameras"),
-        overviewActiveCount: $("overviewActiveCount"),
-        overviewRecentCount: $("overviewRecentCount"),
-        overviewUnmatchedCount: $("overviewUnmatchedCount"),
+    const dashboardStore = createDashboardStore();
+    const state = dashboardStore.state;
+    const dashboardApi = createDashboardApi(window.fetch.bind(window));
 
-        uploadBtn: $("uploadBtn"),
-        imageInput: $("imageInput"),
-
-        detectorStatus: $("detectorStatus"),
-        ocrStatus: $("ocrStatus"),
-        entryCamStatus: $("entryCamStatus"),
-        exitCamStatus: $("exitCamStatus"),
-        detectorDot: $("detectorDot"),
-        ocrDot: $("ocrDot"),
-        entryCamDot: $("entryCamDot"),
-        exitCamDot: $("exitCamDot"),
-        entryCamSource: $("entryCamSource"),
-        exitCamSource: $("exitCamSource"),
-
-        previewImage: $("previewImage"),
-        uploadPlaceholder: $("uploadPlaceholder"),
-        entryStream: $("entryStream"),
-        exitStream: $("exitStream"),
-        entryPlaceholder: $("entryPlaceholder"),
-        exitPlaceholder: $("exitPlaceholder"),
-        entryPlaceholderState: $("entryPlaceholderState"),
-        exitPlaceholderState: $("exitPlaceholderState"),
-        entryPlaceholderTitle: $("entryPlaceholderTitle"),
-        exitPlaceholderTitle: $("exitPlaceholderTitle"),
-        entryPlaceholderNote: $("entryPlaceholderNote"),
-        exitPlaceholderNote: $("exitPlaceholderNote"),
-        entryPlaceholderSource: $("entryPlaceholderSource"),
-        exitPlaceholderSource: $("exitPlaceholderSource"),
-
-        workspaceRoleBadge: $("workspaceRoleBadge"),
-        workspaceStateBadge: $("workspaceStateBadge"),
-        workspaceSourceName: $("workspaceSourceName"),
-        workspaceSourceValue: $("workspaceSourceValue"),
-        workspaceFrameSize: $("workspaceFrameSize"),
-        workspaceLastFrame: $("workspaceLastFrame"),
-
-        cropPreview: $("cropPreview"),
-        cropPlaceholder: $("cropPlaceholder"),
-        plateDisplay: $("plateDisplay"),
-        recognitionStateBadge: $("recognitionStateBadge"),
-        detConfidence: $("detConfidence"),
-        ocrConfidence: $("ocrConfidence"),
-        stableOccurrences: $("stableOccurrences"),
-        detectorMode: $("detectorMode"),
-        ocrMode: $("ocrMode"),
-        resultTime: $("resultTime"),
-        resultSource: $("resultSource"),
-
-        resultJson: $("resultJson"),
-        jsonUpdated: $("jsonUpdated"),
-
-        refreshRecordsBtn: $("refreshRecordsBtn"),
-        refreshJsonBtn: $("refreshJsonBtn"),
-        clearStreamLogsBtn: $("clearStreamLogsBtn"),
-        artifactViewer: $("artifactViewer"),
-        artifactViewerImage: $("artifactViewerImage"),
-        artifactViewerTitle: $("artifactViewerTitle"),
-        artifactViewerMeta: $("artifactViewerMeta"),
-        artifactViewerClose: $("artifactViewerClose"),
-
-        recordsPanel: document.querySelector(".records-panel"),
-        activeSessionsBody: $("activeSessionsBody"),
-        recentEventsBody: $("recentEventsBody"),
-        sessionHistoryBody: $("sessionHistoryBody"),
-        unmatchedExitsBody: $("unmatchedExitsBody"),
-        logsEventsBody: $("logsEventsBody"),
-
-        tabCountActive: $("tabCountActive"),
-        tabCountEvents: $("tabCountEvents"),
-        tabCountHistory: $("tabCountHistory"),
-        tabCountUnmatched: $("tabCountUnmatched"),
-        tabCountLogs: $("tabCountLogs"),
-
-        tplActiveSession: $("tplActiveSession"),
-        tplRecentEvent: $("tplRecentEvent"),
-        tplSessionHistory: $("tplSessionHistory"),
-        tplUnmatchedExit: $("tplUnmatchedExit"),
-        tplLogEvent: $("tplLogEvent"),
-    };
-
-    const sourceTabs = document.querySelectorAll(".tab-btn[data-tab]");
-    const recordsTabs = document.querySelectorAll(".records-tab[data-record-tab]");
-    const sourceTabMap = {
-        upload: $("tabUpload"),
-        entry: $("tabEntry"),
-        exit: $("tabExit"),
-    };
-    const recordsTabMap = {
-        active: $("recordsViewActive"),
-        events: $("recordsViewEvents"),
-        history: $("recordsViewHistory"),
-        unmatched: $("recordsViewUnmatched"),
-        logs: $("recordsViewLogs"),
-    };
-    const overlayMap = {
-        entry: {
-            box: $("entryOverlay"),
-            role: $("entryOverlayRole"),
-            state: $("entryOverlayState"),
-            plate: $("entryOverlayPlate"),
-            confidence: $("entryOverlayConfidence"),
-            fps: $("entryOverlayFps"),
-            latency: $("entryOverlayLatency"),
-        },
-        exit: {
-            box: $("exitOverlay"),
-            role: $("exitOverlayRole"),
-            state: $("exitOverlayState"),
-            plate: $("exitOverlayPlate"),
-            confidence: $("exitOverlayConfidence"),
-            fps: $("exitOverlayFps"),
-            latency: $("exitOverlayLatency"),
-        },
-    };
-
-    const state = {
-        eventSource: null,
-        serverOffset: 0,
-        availableCameraRoles: [],
-        defaultCameraRole: "entry",
-        statusPayload: null,
-        latestPayloads: {},
-        activeSourceTab: "upload",
-        activeRecordsTab: "active",
-        collectionCounts: {
-            active: 0,
-            events: 0,
-            history: 0,
-            unmatched: 0,
-            logs: 0,
-        },
-        logEventRows: [],
-        lastHydrationAtByRole: {},
-        hydrationInFlightByRole: {},
-    };
-
-    function isVideoFile(file) {
-        if (!file) return false;
-        if (file.type && file.type.startsWith("video/")) return true;
-        const name = String(file.name || "").toLowerCase();
-        return [".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"].some((extension) => name.endsWith(extension));
-    }
+    const recognitionDowngradeHoldMs = 1500;
+    const idleDowngradeHoldMs = 2500;
 
     function setNamedBadge(element, text, cls) {
         element.textContent = text;
@@ -174,528 +68,140 @@
         element.className = "status-dot " + stateName;
     }
 
+    function setCameraStatusPill(element, text, cls) {
+        if (!element) return;
+        element.textContent = text;
+        element.className = "camera-status-pill";
+        if (cls) {
+            element.classList.add(cls);
+        }
+    }
+
     function setGlobalBadge(text, cls) {
         setNamedBadge(els.statusBadge, text, cls);
     }
 
-    function formatTime(isoValue) {
-        if (!isoValue) return "—";
-        try {
-            const date = new Date(isoValue);
-            return date.toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-                hour12: false,
-            });
-        } catch {
-            return String(isoValue);
+    function setRefreshBusy(isBusy) {
+        state.dashboardRefreshInFlight = Boolean(isBusy);
+        if (!els.refreshRecordsBtn) return;
+        els.refreshRecordsBtn.disabled = state.dashboardRefreshInFlight;
+        els.refreshRecordsBtn.setAttribute("aria-busy", state.dashboardRefreshInFlight ? "true" : "false");
+    }
+
+    function announceLiveRegion(element, message) {
+        if (!element || !message) return;
+        element.textContent = "";
+        window.setTimeout(() => {
+            element.textContent = message;
+        }, 20);
+    }
+
+    function announceStatus(message, options = {}) {
+        if (!message) return;
+        const { force = false } = options;
+        if (!force && els.statusLiveRegion && els.statusLiveRegion.textContent === message) {
+            return;
         }
+        announceLiveRegion(els.statusLiveRegion, message);
+    }
+
+    function prefersReducedMotion() {
+        return Boolean(
+            window.matchMedia
+            && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+        );
+    }
+
+    function announceRecognition(message) {
+        if (!message) return;
+        announceLiveRegion(els.recognitionLiveRegion, message);
     }
 
     function formatRelativeTime(isoValue) {
-        if (!isoValue) return "—";
-        const delta = Date.now() - state.serverOffset - new Date(isoValue).getTime();
-        if (!Number.isFinite(delta)) return "—";
-        if (delta < 1000) return "just now";
-        const seconds = Math.floor(delta / 1000);
-        if (seconds < 60) return seconds + "s ago";
-        const minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return minutes + "m ago";
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return hours + "h ago";
-        const days = Math.floor(hours / 24);
-        return days + "d ago";
+        return baseFormatRelativeTime(isoValue, state.serverOffset);
     }
 
-    function safeNum(value, digits = 3) {
-        if (value == null) return "—";
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) return "—";
-        return numeric.toFixed(digits);
+    function isTimestampToday(isoValue) {
+        return baseIsTimestampToday(isoValue, state.serverOffset);
     }
 
-    function safeInt(value) {
-        if (value == null) return "0";
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) return "0";
-        return String(Math.round(numeric));
-    }
+    function logNoteLabel(eventItem, action) {
+        const noteParts = [];
+        const humanizedNote = humanizeEventNote(eventItem.note);
+        if (humanizedNote !== "—") noteParts.push(humanizedNote);
+        if (eventItem.cleaned_text) noteParts.push(`Cleaned: ${eventItem.cleaned_text}`);
+        if (eventItem.stable_text) noteParts.push(`Stable: ${eventItem.stable_text}`);
+        if (eventItem.log_source && !isSessionDecisionAction(action)) noteParts.push(eventItem.log_source);
 
-    function normalizeTextValue(value) {
-        if (value == null) return "";
-        const normalized = String(value).trim();
-        if (!normalized) return "";
-        const lowered = normalized.toLowerCase();
-        if (lowered === "none" || lowered === "null" || lowered === "undefined" || lowered === "nan") {
-            return "";
+        if (noteParts.length > 0) {
+            return noteParts.join(" | ");
         }
-        return normalized;
-    }
-
-    function humanizeSourceName(name, role) {
-        const normalized = normalizeTextValue(name).toLowerCase();
-        if (!normalized) {
-            return role === "exit" ? "Exit camera" : "Entry camera";
+        if (normalizeEventAction(action) === "runtime_no_detection") {
+            return "Detector did not find a plate in this frame";
         }
-
-        const sourceNameMap = {
-            entry_camera: "Entry camera",
-            exit_camera: "Exit camera",
-            entry_phone: "Entry phone",
-            exit_phone: "Exit phone",
-        };
-        if (sourceNameMap[normalized]) {
-            return sourceNameMap[normalized];
+        if (normalizeEventAction(action) === "runtime_detected") {
+            return "Runtime detection before session decision";
         }
-
-        return normalized
-            .replace(/[_-]+/g, " ")
-            .replace(/\b\w/g, (letter) => letter.toUpperCase());
+        return "Runtime log";
     }
 
-    function formatCameraSource(details, role) {
-        const sourceNameRaw = details && details.source_name ? details.source_name : role + "_camera";
-        const sourceName = humanizeSourceName(sourceNameRaw, role);
-        const sourceValue = normalizeTextValue(details && details.source_value != null ? details.source_value : "");
-        if (!sourceValue) {
-            return "No source configured";
-        }
-        return sourceName + ": " + sourceValue;
-    }
-
-    function mapCameraStartError(startError) {
-        if (!startError) return null;
-
-        if (startError === "camera_source_missing") {
-            return {
-                statusText: "Needs Source",
-                dotState: "warn",
-                sourceHint: "No source configured",
-                placeholderState: {
-                    state: "Needs Source",
-                    title: "Camera source missing",
-                    note: "Set a camera URL in Camera Settings",
-                },
-            };
-        }
-
-        if (startError.startsWith("camera_open_failed:")) {
-            return {
-                statusText: "Error",
-                dotState: "error",
-                sourceHint: "Stream unreachable",
-                placeholderState: {
-                    state: "No Signal",
-                    title: "Unable to open stream",
-                    note: "Check camera URL, network, and camera app",
-                },
-            };
-        }
-
-        return {
-            statusText: "Error",
-            dotState: "error",
-            sourceHint: "Camera unavailable",
-            placeholderState: {
-                state: "Error",
-                title: "Camera unavailable",
-                note: "Review camera configuration",
-            },
-        };
-    }
-
-    function normalizeImageData(imageData) {
-        const normalized = normalizeTextValue(imageData);
-        if (!normalized) return "";
-        if (normalized.startsWith("data:image/")) {
-            return normalized;
-        }
-        return normalized.replace(/\s+/g, "");
-    }
-
-    function isLikelyBase64Image(imageData) {
-        const normalized = normalizeImageData(imageData);
-        if (!normalized) return false;
-        if (normalized.startsWith("data:image/")) return true;
-        if (normalized.length < 16) return false;
-        if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) return false;
-
-        try {
-            atob(normalized.slice(0, Math.min(128, normalized.length)));
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    function clearImage(imageElement) {
-        if (!imageElement) return;
-        imageElement.hidden = true;
-        imageElement.removeAttribute("src");
-    }
-
-    function setImageWithFallback(imageElement, placeholderElement, imageData, emptyText, invalidText) {
-        if (!imageElement || !placeholderElement) return;
-        const normalized = normalizeImageData(imageData);
-
-        if (!isLikelyBase64Image(normalized)) {
-            clearImage(imageElement);
-            placeholderElement.textContent = emptyText;
-            placeholderElement.hidden = false;
-            return;
-        }
-
-        imageElement.hidden = true;
-        placeholderElement.hidden = false;
-        imageElement.onload = function () {
-            imageElement.hidden = false;
-            placeholderElement.hidden = true;
-        };
-        imageElement.onerror = function () {
-            clearImage(imageElement);
-            placeholderElement.textContent = invalidText;
-            placeholderElement.hidden = false;
-        };
-
-        imageElement.src = normalized.startsWith("data:image/")
-            ? normalized
-            : "data:image/jpeg;base64," + normalized;
-    }
-
-    function formatDurationMinutes(startIso, endIso) {
-        if (!startIso) return "—";
-        const start = new Date(startIso).getTime();
-        const end = endIso ? new Date(endIso).getTime() : Date.now();
-        const diff = end - start;
-        if (!Number.isFinite(diff) || diff < 0) return "—";
-        const minutes = Math.floor(diff / 60000);
-        if (minutes < 1) return "<1 min";
-        if (minutes < 60) return minutes + " min";
-        const hours = Math.floor(minutes / 60);
-        const remainder = minutes % 60;
-        return hours + "h " + remainder + "m";
-    }
-
-    function normalizeEventAction(action) {
-        return String(action || "logged_only").trim().toLowerCase();
-    }
-
-    function dedupeRowsById(rows) {
-        if (!Array.isArray(rows)) return [];
-        const seen = new Set();
-        const deduped = [];
-        rows.forEach((row) => {
-            if (!row) return;
-            const key = row.id != null
-                ? `id:${row.id}`
-                : row.log_id != null
-                    ? `log:${row.log_id}`
-                    : `fallback:${row.timestamp || ""}:${row.camera_role || ""}:${row.raw_text || ""}:${row.note || ""}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            deduped.push(row);
-        });
-        return deduped;
-    }
-
-    function toTitleCaseFromSnake(text) {
-        return String(text || "")
-            .trim()
-            .replace(/[_-]+/g, " ")
-            .replace(/\b\w/g, (letter) => letter.toUpperCase());
-    }
-
-    function eventActionLabel(action) {
-        const normalized = normalizeEventAction(action);
-        const labels = {
-            session_opened: "Session Opened",
-            session_closed: "Session Closed",
-            unmatched_exit: "Unmatched Exit",
-            logged_only: "Logged Only",
-            ignored_duplicate: "Ignored Duplicate",
-            ignored_low_quality: "Ignored Low Quality",
-            ignored_ambiguous_near_match: "Ignored Ambiguous",
-            runtime_detected: "Runtime Detection",
-            runtime_no_detection: "Runtime No Detection",
-        };
-        return labels[normalized] || toTitleCaseFromSnake(normalized) || "Logged Only";
-    }
-
-    function actionBadgeClass(action) {
-        switch (normalizeEventAction(action)) {
-            case "session_opened":
-                return "open";
-            case "session_closed":
-                return "closed";
-            case "unmatched_exit":
-                return "error";
-            case "logged_only":
-                return "live";
-            case "ignored_duplicate":
-            case "ignored_low_quality":
-            case "ignored_ambiguous_near_match":
-                return "warn";
-            case "runtime_detected":
-                return "live";
-            case "runtime_no_detection":
-                return "closed";
-            default:
-                return "";
-        }
-    }
-
-    function renderBadge(container, text, cls) {
-        if (!container) return;
-        container.innerHTML = "";
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        if (cls) {
-            badge.classList.add(cls);
-        }
-        badge.textContent = text;
-        container.appendChild(badge);
-    }
-
-    function escapeHtml(value) {
-        const span = document.createElement("span");
-        span.textContent = value == null ? "" : String(value);
-        return span.innerHTML;
-    }
-
-    function getActiveCameraRole() {
-        if (state.activeSourceTab === "entry" || state.activeSourceTab === "exit") {
-            return state.activeSourceTab;
-        }
-        const runningRoles = state.statusPayload && Array.isArray(state.statusPayload.running_camera_roles)
-            ? state.statusPayload.running_camera_roles.map((role) => String(role).toLowerCase())
-            : [];
-        if (runningRoles.includes(state.defaultCameraRole)) {
-            return state.defaultCameraRole;
-        }
-        if (runningRoles.length > 0) {
-            return runningRoles[0];
-        }
-        return state.defaultCameraRole;
-    }
-
-    function getWorkspaceRole() {
-        return state.activeSourceTab === "entry" || state.activeSourceTab === "exit"
-            ? state.activeSourceTab
-            : "upload";
-    }
-
-    function getCameraDetails(role) {
-        if (!state.statusPayload || !state.statusPayload.camera_details) return null;
-        return state.statusPayload.camera_details[role] || null;
-    }
-
-    function isCameraRunning(role) {
-        if (!state.statusPayload || !Array.isArray(state.statusPayload.running_camera_roles)) {
-            return false;
-        }
-        return state.statusPayload.running_camera_roles
-            .map((item) => String(item).toLowerCase())
-            .includes(String(role || "").toLowerCase());
-    }
-
-    function idlePayloadForRole(role) {
-        return {
-            status: "idle",
-            message: `Camera '${role}' is stopped.`,
-            camera_role: role,
-            source_type: "camera",
-            source_name: role,
-            plate_detected: false,
-            detection: null,
-            ocr: null,
-            stable_result: {
-                value: "",
-                confidence: 0,
-                occurrences: 0,
-                accepted: false,
-            },
-            annotated_image_base64: null,
-            crop_image_base64: null,
-        };
-    }
-
-    function payloadForDisplay(payload) {
-        if (!payload || !payload.camera_role || payload.source_type === "upload" || payload.source_type === "video") {
-            return payload;
-        }
-        return isCameraRunning(payload.camera_role) ? payload : idlePayloadForRole(payload.camera_role);
-    }
-
-    function detectionStateFromPayload(payload) {
-        if (!payload) return { text: "No data", cls: "" };
-        if (payload.status === "error") return { text: "Error", cls: "error" };
-        if (payload.status === "idle") return { text: "Idle", cls: "" };
-        if (payload.status === "no_detection") return { text: "No plate", cls: "closed" };
-
-        const stable = payload.stable_result || {};
-        const cleaned = payload.ocr && payload.ocr.cleaned_text ? payload.ocr.cleaned_text : "";
-
-        if (stable.accepted && stable.value) {
-            return { text: "Stable", cls: "live" };
-        }
-        if (cleaned) {
-            return { text: "Candidate", cls: "warn" };
-        }
-        if (payload.plate_detected) {
-            return { text: "Detected", cls: "open" };
-        }
-        return { text: "No data", cls: "" };
-    }
-
-    function setSourceTab(name) {
-        state.activeSourceTab = name;
-        sourceTabs.forEach((button) => {
-            button.classList.toggle("is-active", button.dataset.tab === name);
-        });
-        Object.entries(sourceTabMap).forEach(([key, panel]) => {
-            panel.classList.toggle("is-active", key === name);
-        });
-        if ((name === "entry" || name === "exit") && !isCameraRunning(name)) {
-            renderResult(idlePayloadForRole(name), { renderJson: false });
-        }
-        updateWorkspaceSummary();
-    }
-
-    function setRecordsTab(name) {
-        state.activeRecordsTab = name;
-        recordsTabs.forEach((button) => {
-            button.classList.toggle("is-active", button.dataset.recordTab === name);
-        });
-        Object.entries(recordsTabMap).forEach(([key, panel]) => {
-            panel.classList.toggle("is-active", key === name);
-        });
-        if (name === "logs") {
-            renderLogEvents();
-        }
-    }
-
-    function renderLogEvents() {
-        if (!els.logsEventsBody || !els.tplLogEvent) return;
-        const normalizedRows = dedupeRowsById(state.logEventRows);
-        state.collectionCounts.logs = normalizedRows.length;
-        if (els.tabCountLogs) {
-            els.tabCountLogs.textContent = safeInt(state.collectionCounts.logs);
-        }
-
-        els.logsEventsBody.innerHTML = "";
-        if (normalizedRows.length === 0) {
-            els.logsEventsBody.innerHTML = '<tr><td colspan="10" class="table-empty">No event logs yet.</td></tr>';
-            return;
-        }
-
-        normalizedRows.forEach((eventItem) => {
-            const clone = els.tplLogEvent.content.cloneNode(true);
-            clone.querySelector(".col-time").textContent = formatTime(eventItem.timestamp);
-            clone.querySelector(".col-camera").textContent = eventItem.camera_role || "";
-            clone.querySelector(".col-source").textContent = eventItem.source_name || eventItem.source_type || eventItem.log_source || "—";
-            clone.querySelector(".col-plate").textContent = eventItem.plate_number || eventItem.stable_text || eventItem.cleaned_text || "";
-
-            const action = normalizeEventAction(
-                eventItem.event_action || (eventItem.plate_detected ? "runtime_detected" : "runtime_no_detection")
-            );
-            renderBadge(
-                clone.querySelector(".col-action"),
-                eventActionLabel(action),
-                actionBadgeClass(action),
-            );
-
-            const noteParts = [];
-            if (eventItem.note) noteParts.push(eventItem.note);
-            if (eventItem.cleaned_text) noteParts.push(`cleaned=${eventItem.cleaned_text}`);
-            if (eventItem.stable_text) noteParts.push(`stable=${eventItem.stable_text}`);
-            if (eventItem.log_source) noteParts.push(eventItem.log_source);
-            clone.querySelector(".col-note").textContent = noteParts.join(" | ") || "Runtime log";
-            clone.querySelector(".col-raw").textContent = eventItem.raw_text || "";
-            clone.querySelector(".col-det-conf").textContent = safeNum(eventItem.detector_confidence);
-            clone.querySelector(".col-ocr-conf").textContent = safeNum(eventItem.ocr_confidence);
-
-            const btn = clone.querySelector("button");
-            if (eventItem.id != null) {
-                btn.dataset.entityId = eventItem.id;
-                btn.dataset.entitySummary = eventItem.plate_number || eventItem.raw_text || "";
-                btn.hidden = false;
-            } else {
-                btn.hidden = true;
-                btn.dataset.entityId = "";
-                btn.dataset.entitySummary = "";
-            }
-
-            const actionsCell = clone.querySelector(".col-actions");
-            const cropLink = createArtifactLink(eventItem.crop_path, "Event Crop");
-            if (cropLink) {
-                actionsCell.insertBefore(cropLink, btn);
-            }
-
-            els.logsEventsBody.appendChild(clone);
-        });
-    }
-
-    function setStreamLogsFromEvents(rows) {
-        state.logEventRows = dedupeRowsById(rows);
-        renderLogEvents();
-    }
-
-    function createArtifactLink(path, label) {
-        const normalizedPath = String(path || "").trim();
-        if (!normalizedPath) return null;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "record-link";
-        button.textContent = label;
-        button.dataset.artifactPath = normalizedPath;
-        button.dataset.artifactLabel = label;
-        return button;
-    }
-
-    function openArtifactViewer(path, label) {
-        const normalizedPath = String(path || "").trim();
-        if (!normalizedPath || !els.artifactViewer || !els.artifactViewerImage) return;
-
-        const sourceUrl = "/artifacts?path=" + encodeURIComponent(normalizedPath);
-        if (els.artifactViewerTitle) {
-            els.artifactViewerTitle.textContent = label || "Crop Preview";
-        }
-        if (els.artifactViewerMeta) {
-            els.artifactViewerMeta.textContent = normalizedPath;
-        }
-        els.artifactViewerImage.src = sourceUrl;
-        els.artifactViewerImage.alt = label || "Crop preview image";
-        els.artifactViewer.hidden = false;
-        els.artifactViewer.setAttribute("aria-hidden", "false");
-        document.body.classList.add("no-scroll");
-    }
-
-    function closeArtifactViewer() {
-        if (!els.artifactViewer) return;
-        els.artifactViewer.hidden = true;
-        els.artifactViewer.setAttribute("aria-hidden", "true");
-        if (els.artifactViewerImage) {
-            els.artifactViewerImage.removeAttribute("src");
-        }
-        document.body.classList.remove("no-scroll");
-    }
-
-    sourceTabs.forEach((button) => {
-        button.addEventListener("click", async () => {
-            setSourceTab(button.dataset.tab);
-            if (button.dataset.tab === "entry" || button.dataset.tab === "exit") {
-                await refreshLatestResultForRole(button.dataset.tab, { renderJson: false });
-            }
-        });
+    const {
+        closeArtifactViewer,
+        openArtifactViewer,
+        renderActiveSessions,
+        renderLogEvents,
+        renderMiniSummaryLists,
+        renderRecentEvents,
+        renderSessionHistory,
+        renderUnmatchedExits,
+        renderVehicleLookup,
+        renderWorkspaceRecentList,
+        setStreamLogsFromEvents,
+        updateDailyOverviewMetrics,
+    } = createDashboardPanels({
+        actionBadgeClass,
+        dedupeRowsById,
+        els,
+        eventActionLabel,
+        formatClockTime,
+        formatDurationMinutes,
+        formatRelativeTime,
+        formatTime,
+        humanizeEventNote,
+        isTimestampToday,
+        logNoteLabel,
+        logSourceLabel,
+        normalizeEventAction,
+        normalizeTextValue,
+        safeInt,
+        safeNum,
+        setNamedBadge,
+        state,
+        summarizeDocuments,
+        toTitleCaseFromSnake,
+        vehicleLookupBadgeClass,
+        vehicleLookupBadgeText,
     });
 
-    recordsTabs.forEach((button) => {
-        button.addEventListener("click", () => {
-            setRecordsTab(button.dataset.recordTab);
-        });
+    const {
+        applyCameraRoleAvailability,
+        detectionStateFromPayload,
+        emptyUploadPayload,
+        getCameraDetails,
+        getWorkspaceRole,
+        idlePayloadForRole,
+        isCameraRoleConfigured,
+        isCameraRunning,
+        normalizeRunningRoles,
+        payloadForDisplay,
+        pickRoleForRecognitionRender,
+        stabilizedRecognitionPayload,
+    } = createDashboardCameraState({
+        els,
+        idleDowngradeHoldMs,
+        recognitionDowngradeHoldMs,
+        sourceTabMap,
+        state,
     });
 
     function setCameraSurface(role, running) {
@@ -704,13 +210,13 @@
         const streamPath = state.availableCameraRoles.includes(role) ? `/cameras/${role}/stream` : "/stream";
         const overlay = overlayMap[role];
         const details = getCameraDetails(role);
-        const hasFrame = Boolean(details && details.last_frame_at);
         const feedState = getCameraPlaceholderState(role, running, details);
         const canRenderStream = Boolean(stream);
+        const isLiveFeed = running && feedState.state === "Live" && canRenderStream;
 
         updateCameraPlaceholder(role, feedState, details);
 
-        if (running && hasFrame && canRenderStream) {
+        if (isLiveFeed) {
             if (!stream.hasAttribute("src")) {
                 stream.setAttribute("src", streamPath + "?" + Date.now());
             }
@@ -794,12 +300,16 @@
     function renderCameraReadiness(role, running, details) {
         const startError = details && details.last_start_error ? String(details.last_start_error) : "";
         const mappedError = mapCameraStartError(startError);
+        const feedState = getCameraPlaceholderState(role, running, details);
         const hasError = !running && Boolean(mappedError);
-        const statusText = running ? "Running" : hasError ? mappedError.statusText : "Idle";
-        const dotState = running ? "ok" : hasError ? mappedError.dotState : "idle";
+        const statusText = running ? feedState.state : hasError ? mappedError.statusText : "Idle";
+        const dotState = running
+            ? (feedState.state === "Live" ? "ok" : feedState.state === "Connecting" ? "warn" : "error")
+            : hasError ? mappedError.dotState : "idle";
         const statusNode = role === "entry" ? els.entryCamStatus : els.exitCamStatus;
         const dotNode = role === "entry" ? els.entryCamDot : els.exitCamDot;
         const sourceNode = role === "entry" ? els.entryCamSource : els.exitCamSource;
+        const badgeNode = role === "entry" ? els.entryCamLiveBadge : els.exitCamLiveBadge;
         let sourceText = formatCameraSource(details, role);
 
         if (hasError && mappedError && mappedError.sourceHint) {
@@ -813,6 +323,11 @@
         statusNode.textContent = statusText;
         setStatusDot(dotNode, dotState);
         sourceNode.textContent = sourceText;
+        setCameraStatusPill(
+            badgeNode,
+            statusText,
+            running ? (dotState === "ok" ? "live" : dotState === "warn" ? "warn" : "error") : (hasError ? dotState : ""),
+        );
         setCameraSurface(role, running);
     }
 
@@ -825,7 +340,8 @@
             return;
         }
 
-        if (!running) {
+        const feedState = getCameraPlaceholderState(role, running, details);
+        if (!running || feedState.state !== "Live") {
             overlay.box.hidden = true;
             return;
         }
@@ -853,12 +369,38 @@
     }
 
     function renderOverviewStatus(status) {
-        els.overviewDetectorState.textContent = status.detector_ready ? "Ready" : "Not ready";
-        els.overviewOcrState.textContent = status.ocr_ready ? "Ready" : "Not ready";
-        els.overviewStorageState.textContent = status.storage_ready ? "Writable" : "Unavailable";
-        els.overviewSessionState.textContent = status.session_ready ? "Ready" : "Unavailable";
-        els.overviewRunningCameras.textContent = safeInt((status.running_camera_roles || []).length);
-        els.overviewUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
+        if (els.overviewDetectorState) {
+            els.overviewDetectorState.textContent = status.detector_ready ? "Ready" : "Not ready";
+        }
+        if (els.overviewOcrState) {
+            els.overviewOcrState.textContent = status.ocr_ready ? "Ready" : "Not ready";
+        }
+        if (els.overviewStorageState) {
+            els.overviewStorageState.textContent = status.storage_ready ? "Writable" : "Unavailable";
+        }
+        if (els.overviewSessionState) {
+            els.overviewSessionState.textContent = status.session_ready ? "Ready" : "Unavailable";
+        }
+        if (els.overviewRunningCameras) {
+            els.overviewRunningCameras.textContent = safeInt((status.running_camera_roles || []).length);
+        }
+        if (els.overviewRunningCameraRoles) {
+            const runningRoles = Array.isArray(status.running_camera_roles) && status.running_camera_roles.length > 0
+                ? status.running_camera_roles.map((role) => String(role)).join(", ")
+                : (Array.isArray(status.camera_roles) && status.camera_roles.length > 0
+                    ? status.camera_roles.map((role) => String(role)).join(", ")
+                    : "Entry, Exit");
+            els.overviewRunningCameraRoles.textContent = runningRoles;
+        }
+        if (els.overviewDetectorCard) {
+            els.overviewDetectorCard.classList.toggle("is-positive", Boolean(status.detector_ready));
+        }
+        if (els.overviewOcrCard) {
+            els.overviewOcrCard.classList.toggle("is-positive", Boolean(status.ocr_ready));
+        }
+        if (els.overviewUpdated) {
+            els.overviewUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
+        }
     }
 
     function updateWorkspaceSummary() {
@@ -888,11 +430,18 @@
     }
 
     function renderResult(payload, options = {}) {
-        const { updateJson = true } = options;
+        const { updateJson, renderJson } = options;
+        const shouldUpdateJson = typeof updateJson === "boolean"
+            ? updateJson
+            : (typeof renderJson === "boolean" ? renderJson : true);
         payload = payloadForDisplay(payload);
+        payload = stabilizedRecognitionPayload(payload);
+        state.currentRecognitionPayload = payload;
         const stable = payload.stable_result || {};
         const ocr = payload.ocr || {};
         const detection = payload.detection || {};
+        renderVehicleLookup(payload.vehicle_lookup || null);
+        syncRecognitionActionButtons(payload);
 
         if (payload.source_type === "upload" || payload.source_type === "video") {
             state.latestPayloads.upload = payload;
@@ -929,6 +478,13 @@
         els.detConfidence.textContent = detection.confidence != null ? safeNum(detection.confidence) : "—";
         els.ocrConfidence.textContent = ocr.confidence != null ? safeNum(ocr.confidence) : "—";
         els.stableOccurrences.textContent = stable.occurrences != null ? safeInt(stable.occurrences) : "—";
+        const decisionMeta = sessionDecisionSummary(payload);
+        if (els.sessionDecision) {
+            els.sessionDecision.textContent = decisionMeta.decision;
+        }
+        if (els.sessionDecisionReason) {
+            els.sessionDecisionReason.textContent = decisionMeta.reason;
+        }
         els.detectorMode.textContent = payload.detector_mode || "—";
         els.ocrMode.textContent = payload.ocr_mode || "—";
         els.resultTime.textContent = payload.timestamp ? formatTime(payload.timestamp) : "—";
@@ -946,573 +502,245 @@
             els.cropPreview,
             els.cropPlaceholder,
             payload.crop_image_base64,
-            payload.status === "error" ? "Recognition unavailable" : "No plate detected",
+            payload.status === "error"
+                ? "Recognition unavailable"
+                : ((payload.status === "idle" || payload.status === "no_data")
+                    ? "Waiting for input"
+                    : "No plate detected"),
             "Unable to render plate crop",
         );
 
-        if (updateJson) {
+        if (shouldUpdateJson) {
             els.resultJson.textContent = JSON.stringify(payload, null, 2);
             els.jsonUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
+        }
+
+        if (state.activeModalId === "profile") {
+            renderProfileModal();
         }
 
         updateWorkspaceSummary();
     }
 
-    async function fetchJSON(url) {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) return null;
-            return await response.json();
-        } catch {
-            return null;
+    function applyStatusState(status) {
+        if (!status || typeof status !== "object") return;
+
+        if (status.server_time) {
+            const serverTimeMs = new Date(status.server_time).getTime();
+            state.serverOffset = Date.now() - serverTimeMs;
+            state.lastAppliedServerTimeMs = Math.max(state.lastAppliedServerTimeMs, serverTimeMs);
         }
+
+        state.statusPayload = status;
+        state.availableCameraRoles = Array.isArray(status.camera_roles)
+            ? status.camera_roles.map((role) => String(role).toLowerCase())
+            : [];
+        state.defaultCameraRole = String(status.default_camera_role || "entry").toLowerCase();
+        applyCameraRoleAvailability({ setSourceTab });
+
+        els.detectorStatus.textContent = status.detector_ready
+            ? "Ready (" + status.detector_mode + ")"
+            : "Not ready (" + status.detector_mode + ")";
+        setStatusDot(els.detectorDot, status.detector_ready ? "ok" : "error");
+
+        els.ocrStatus.textContent = status.ocr_ready
+            ? "Ready (" + status.ocr_mode + ")"
+            : "Not ready (" + status.ocr_mode + ")";
+        setStatusDot(els.ocrDot, status.ocr_ready ? "ok" : "error");
+
+        const runningRoles = normalizeRunningRoles(status);
+        renderCameraReadiness("entry", runningRoles.includes("entry"), getCameraDetails("entry"));
+        renderCameraReadiness("exit", runningRoles.includes("exit"), getCameraDetails("exit"));
+        renderCameraOverlay("entry", getCameraDetails("entry"), state.latestPayloads.entry || null, runningRoles.includes("entry"));
+        renderCameraOverlay("exit", getCameraDetails("exit"), state.latestPayloads.exit || null, runningRoles.includes("exit"));
+        renderOverviewStatus(status);
+
+        if (runningRoles.length > 0) {
+            setGlobalBadge("LIVE", "live");
+        } else {
+            setGlobalBadge("IDLE", "");
+        }
+
+        updateWorkspaceSummary();
     }
 
-    async function deleteModerationRecord(entityType, entityId, summaryText) {
-        const label = summaryText ? `${entityType} ${entityId} (${summaryText})` : `${entityType} ${entityId}`;
-        const confirmed = window.confirm(`Delete ${label}? This removes it from the moderation records.`);
-        if (!confirmed) return;
+    function maybeAnnounceRecognition(payload) {
+        if (!payload || typeof payload !== "object") return;
+        const recognitionEvent = payload.recognition_event;
+        if (!recognitionEvent || typeof recognitionEvent !== "object") return;
 
-        try {
-            const response = await fetch(`/moderation/${entityType}/${entityId}`, { method: "DELETE" });
-            const payload = await response.json().catch(() => null);
-            if (!response.ok) {
-                const message = payload && payload.detail ? payload.detail : `Delete failed for ${entityType} ${entityId}.`;
-                throw new Error(message);
-            }
-            els.resultJson.textContent = JSON.stringify(payload, null, 2);
-            els.jsonUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
-            await refreshAllRecords();
-            await refreshStatus();
-        } catch (error) {
-            setGlobalBadge("ERROR", "error");
-            els.resultJson.textContent = "Moderation error: " + (error && error.message ? error.message : "Unknown error.");
-        }
-    }
+        const plateNumber = normalizeTextValue(
+            recognitionEvent.plate_number
+            || recognitionEvent.stable_text
+            || (payload.stable_result && payload.stable_result.value)
+            || "",
+        );
+        if (!plateNumber) return;
 
-    async function refreshStatus() {
-        try {
-            const response = await fetch("/status");
-            if (!response.ok) {
-                throw new Error("Status endpoint unavailable.");
-            }
-            const status = await response.json();
-            if (status.server_time) {
-                state.serverOffset = Date.now() - new Date(status.server_time).getTime();
-            }
-            state.statusPayload = status;
-            state.availableCameraRoles = Array.isArray(status.camera_roles)
-                ? status.camera_roles.map((role) => String(role).toLowerCase())
-                : [];
-            state.defaultCameraRole = String(status.default_camera_role || "entry").toLowerCase();
-
-            els.detectorStatus.textContent = status.detector_ready
-                ? "Ready (" + status.detector_mode + ")"
-                : "Not ready (" + status.detector_mode + ")";
-            setStatusDot(els.detectorDot, status.detector_ready ? "ok" : "error");
-
-            els.ocrStatus.textContent = status.ocr_ready
-                ? "Ready (" + status.ocr_mode + ")"
-                : "Not ready (" + status.ocr_mode + ")";
-            setStatusDot(els.ocrDot, status.ocr_ready ? "ok" : "error");
-
-            const runningRoles = Array.isArray(status.running_camera_roles)
-                ? status.running_camera_roles.map((role) => String(role).toLowerCase())
-                : [];
-
-            renderCameraReadiness("entry", runningRoles.includes("entry"), getCameraDetails("entry"));
-            renderCameraReadiness("exit", runningRoles.includes("exit"), getCameraDetails("exit"));
-            renderCameraOverlay("entry", getCameraDetails("entry"), state.latestPayloads.entry || null, runningRoles.includes("entry"));
-            renderCameraOverlay("exit", getCameraDetails("exit"), state.latestPayloads.exit || null, runningRoles.includes("exit"));
-            renderOverviewStatus(status);
-
-            if (runningRoles.length > 0) {
-                setGlobalBadge("LIVE", "live");
-            } else {
-                setGlobalBadge("IDLE", "");
-            }
-
-            updateWorkspaceSummary();
-        } catch (error) {
-            setGlobalBadge("ERROR", "error");
-            els.resultJson.textContent = "Status error: " + (error && error.message ? error.message : "Unknown error.");
-        }
-    }
-
-    async function sendCameraControl(role, action) {
-        try {
-            const response = await fetch(`/cameras/${role}/${action}`, { method: "POST" });
-            const payload = await response.json().catch(() => null);
-            return payload || { status: response.ok ? action : "error" };
-        } catch (error) {
-            return {
-                status: "error",
-                message: error && error.message ? error.message : `Camera ${action} request failed.`,
-            };
-        }
-    }
-
-    async function startCamera(role) {
-        const payload = await sendCameraControl(role, "start");
-        if (payload.status !== "running") {
-            setGlobalBadge("ERROR", "error");
-            if (payload.message) {
-                els.resultJson.textContent = payload.message;
-            }
-            await refreshStatus();
+        const recognitionKey = [
+            normalizeTextValue(recognitionEvent.timestamp || payload.timestamp || ""),
+            plateNumber,
+            normalizeTextValue(payload.camera_role || recognitionEvent.camera_role || ""),
+        ].join("|");
+        if (!recognitionKey || recognitionKey === state.lastRecognitionAnnouncementKey) {
             return;
         }
 
-        setSourceTab(role);
-        await refreshStatus();
-        await refreshLatestResultForRole(role, { renderJson: false });
+        state.lastRecognitionAnnouncementKey = recognitionKey;
+        announceRecognition(`New recognition result: ${plateNumber}.`);
     }
 
-    async function stopCamera(role) {
-        const payload = await sendCameraControl(role, "stop");
-        if (payload.status !== "stopped") {
-            setGlobalBadge("ERROR", "error");
-            if (payload.message) {
-                els.resultJson.textContent = payload.message;
-            }
-        }
-        await refreshStatus();
-        state.latestPayloads[role] = idlePayloadForRole(role);
-        renderCameraOverlay(role, getCameraDetails(role), state.latestPayloads[role], false);
-        if (state.activeSourceTab === role) {
-            renderResult(state.latestPayloads[role]);
-        } else {
-            updateWorkspaceSummary();
-        }
-    }
+    function applyDashboardState(data, options = {}) {
+        if (!data || typeof data !== "object") return;
 
-    async function refreshLatestResultForRole(role, options = {}) {
-        const endpoint = state.availableCameraRoles.includes(role)
-            ? `/cameras/${role}/latest-result`
-            : "/latest-result";
-        const payload = await fetchJSON(endpoint);
-        if (!payload) return null;
-        const displayPayload = payloadForDisplay(payload);
-        if (displayPayload.status && displayPayload.status !== "idle") {
-            renderResult(displayPayload, options);
-        } else {
-            state.latestPayloads[role] = displayPayload;
-            if (state.activeSourceTab === role) {
-                renderResult(displayPayload, options);
-            }
-            updateWorkspaceSummary();
-            if (options.renderJson) {
-                els.resultJson.textContent = JSON.stringify(displayPayload, null, 2);
-                els.jsonUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
-            }
-        }
-        return displayPayload;
-    }
-
-    function hasRenderablePayload(payload) {
-        if (!payload || typeof payload !== "object") return false;
-        if (payload.status === "idle" || payload.status === "no_data") return false;
-        return true;
-    }
-
-    function pickRoleForRecognitionRender(latestResults, runningRoles) {
-        const activeRole = getActiveCameraRole();
-        const activePayload = latestResults ? latestResults[activeRole] : null;
-        if (hasRenderablePayload(activePayload)) {
-            return activeRole;
+        const { source = "snapshot" } = options;
+        const statusPayload = data.status && typeof data.status === "object" ? data.status : null;
+        const serverTimeMs = statusPayload && statusPayload.server_time
+            ? new Date(statusPayload.server_time).getTime()
+            : 0;
+        if (source !== "sse" && serverTimeMs && serverTimeMs < state.lastAppliedServerTimeMs) {
+            return;
         }
 
-        for (const role of runningRoles) {
-            const payload = latestResults ? latestResults[role] : null;
-            if (hasRenderablePayload(payload)) {
-                return role;
-            }
+        if (statusPayload) {
+            applyStatusState(statusPayload);
         }
 
-        return activeRole;
-    }
+        if (data.active) renderActiveSessions(data.active);
+        if (data.events) renderRecentEvents(data.events);
+        if (data.logs) {
+            setStreamLogsFromEvents(data.logs);
+        } else if (data.events) {
+            setStreamLogsFromEvents(data.events);
+        }
+        if (data.history) renderSessionHistory(data.history);
+        if (data.unmatched) renderUnmatchedExits(data.unmatched);
 
-    function maybeHydrateCameraPayload(role, payload, runningRoles) {
-        if (!role || !payload || typeof payload !== "object") return;
-        if (!runningRoles.includes(role)) return;
-        if (payload.source_type !== "camera") return;
-        if (!payload.plate_detected) return;
-        if (payload.crop_image_base64) return;
+        const runningRoles = normalizeRunningRoles(state.statusPayload);
+        if (data.latest_results && typeof data.latest_results === "object") {
+            Object.entries(data.latest_results).forEach(([role, payload]) => {
+                if (!payload) return;
 
-        const now = Date.now();
-        const lastHydrationAt = Number(state.lastHydrationAtByRole[role] || 0);
-        if (state.hydrationInFlightByRole[role]) return;
-        if ((now - lastHydrationAt) < 1200) return;
-
-        state.hydrationInFlightByRole[role] = true;
-        state.lastHydrationAtByRole[role] = now;
-        refreshLatestResultForRole(role, { renderJson: false })
-            .catch(() => null)
-            .finally(() => {
-                state.hydrationInFlightByRole[role] = false;
+                state.latestPayloads[role] = payload;
+                if (payload.status !== "idle" && state.availableCameraRoles.includes(role)) {
+                    const details = getCameraDetails(role);
+                    renderCameraOverlay(role, details, payload, runningRoles.includes(role));
+                }
             });
-    }
 
-    function renderActiveSessions(rows) {
-        const normalizedRows = dedupeRowsById(rows);
-        state.collectionCounts.active = normalizedRows.length;
-        els.overviewActiveCount.textContent = safeInt(normalizedRows.length);
-        els.tabCountActive.textContent = safeInt(normalizedRows.length);
-
-        els.activeSessionsBody.innerHTML = '';
-        if (normalizedRows.length === 0) {
-            els.activeSessionsBody.innerHTML = '<tr><td colspan="8" class="table-empty">No active sessions</td></tr>';
-            return;
-        }
-
-        normalizedRows.forEach((session) => {
-            const clone = els.tplActiveSession.content.cloneNode(true);
-            clone.querySelector('.col-plate').textContent = session.plate_number || '';
-            clone.querySelector('.col-entry-time').textContent = formatTime(session.entry_time);
-            clone.querySelector('.col-entry-camera').textContent = session.entry_camera || '';
-            clone.querySelector('.col-confidence').textContent = safeNum(session.entry_confidence);
-            clone.querySelector('.col-duration').textContent = formatDurationMinutes(session.entry_time, null);
-            clone.querySelector('.col-updated').textContent = formatRelativeTime(session.updated_at);
-
-            const sessionStatus = String(session.status || 'open').toLowerCase();
-            renderBadge(
-                clone.querySelector('.col-status'),
-                toTitleCaseFromSnake(sessionStatus),
-                sessionStatus === 'closed' ? 'closed' : 'open',
-            );
-
-            const btn = clone.querySelector('button');
-            btn.dataset.entityId = session.id;
-            btn.dataset.entitySummary = session.plate_number || '';
-            const actionsCell = clone.querySelector('.col-actions');
-            const cropLink = createArtifactLink(session.entry_crop_path, 'Entry Crop');
-            if (cropLink) {
-                actionsCell.insertBefore(cropLink, btn);
+            const roleToRender = pickRoleForRecognitionRender(data.latest_results, runningRoles);
+            const payloadToRender = data.latest_results[roleToRender];
+            if (payloadToRender) {
+                renderResult(payloadToRender, { renderJson: false, updateJson: false });
+                maybeHydrateCameraPayload(roleToRender, payloadToRender, runningRoles);
+                maybeAnnounceRecognition(payloadToRender);
             }
-            
-            els.activeSessionsBody.appendChild(clone);
-        });
-    }
-
-    function renderRecentEvents(rows) {
-        const normalizedRows = dedupeRowsById(rows);
-        state.collectionCounts.events = normalizedRows.length;
-        els.overviewRecentCount.textContent = safeInt(normalizedRows.length);
-        els.tabCountEvents.textContent = safeInt(normalizedRows.length);
-
-        els.recentEventsBody.innerHTML = '';
-        if (normalizedRows.length === 0) {
-            els.recentEventsBody.innerHTML = '<tr><td colspan="8" class="table-empty">No events recorded</td></tr>';
-            return;
-        }
-
-        normalizedRows.forEach((eventItem) => {
-            const clone = els.tplRecentEvent.content.cloneNode(true);
-            clone.querySelector('.col-time').textContent = formatTime(eventItem.timestamp);
-            clone.querySelector('.col-camera').textContent = eventItem.camera_role || '';
-            clone.querySelector('.col-plate').textContent = eventItem.plate_number || eventItem.stable_text || '';
-
-            const action = normalizeEventAction(eventItem.event_action);
-            renderBadge(
-                clone.querySelector('.col-action'),
-                eventActionLabel(action),
-                actionBadgeClass(action),
-            );
-            
-            clone.querySelector('.col-raw').textContent = eventItem.raw_text || '';
-            clone.querySelector('.col-det-conf').textContent = safeNum(eventItem.detector_confidence);
-            clone.querySelector('.col-ocr-conf').textContent = safeNum(eventItem.ocr_confidence);
-
-            const btn = clone.querySelector('button');
-            btn.dataset.entityId = eventItem.id;
-            btn.dataset.entitySummary = eventItem.plate_number || eventItem.raw_text || '';
-
-            const actionsCell = clone.querySelector('.col-actions');
-            const cropLink = createArtifactLink(eventItem.crop_path, 'Event Crop');
-            if (cropLink) {
-                actionsCell.insertBefore(cropLink, btn);
-            }
-            
-            els.recentEventsBody.appendChild(clone);
-        });
-    }
-
-    function renderSessionHistory(rows) {
-        const normalizedRows = dedupeRowsById(rows);
-        state.collectionCounts.history = normalizedRows.length;
-        els.tabCountHistory.textContent = safeInt(normalizedRows.length);
-
-        els.sessionHistoryBody.innerHTML = '';
-        if (normalizedRows.length === 0) {
-            els.sessionHistoryBody.innerHTML = '<tr><td colspan="8" class="table-empty">No session history</td></tr>';
-            return;
-        }
-
-        normalizedRows.forEach((session) => {
-            const clone = els.tplSessionHistory.content.cloneNode(true);
-            clone.querySelector('.col-plate').textContent = session.plate_number || '';
-            clone.querySelector('.col-entry-time').textContent = formatTime(session.entry_time);
-            clone.querySelector('.col-exit-time').textContent = formatTime(session.exit_time);
-            clone.querySelector('.col-duration').textContent = formatDurationMinutes(session.entry_time, session.exit_time);
-            clone.querySelector('.col-entry-cam').textContent = session.entry_camera || '';
-            clone.querySelector('.col-exit-cam').textContent = session.exit_camera || '';
-
-            const sessionStatus = String(session.status || 'closed').toLowerCase();
-            renderBadge(
-                clone.querySelector('.col-status'),
-                toTitleCaseFromSnake(sessionStatus),
-                sessionStatus === 'open' ? 'open' : 'closed',
-            );
-
-            const btn = clone.querySelector('button');
-            btn.dataset.entityId = session.id;
-            btn.dataset.entitySummary = session.plate_number || '';
-
-            const actionsCell = clone.querySelector('.col-actions');
-            const entryCropLink = createArtifactLink(session.entry_crop_path, 'Entry Crop');
-            if (entryCropLink) {
-                actionsCell.insertBefore(entryCropLink, btn);
-            }
-            const exitCropLink = createArtifactLink(session.exit_crop_path, 'Exit Crop');
-            if (exitCropLink) {
-                actionsCell.insertBefore(exitCropLink, btn);
-            }
-            
-            els.sessionHistoryBody.appendChild(clone);
-        });
-    }
-
-    function renderUnmatchedExits(rows) {
-        const normalizedRows = dedupeRowsById(rows);
-        state.collectionCounts.unmatched = normalizedRows.length;
-        els.overviewUnmatchedCount.textContent = safeInt(normalizedRows.length);
-        els.tabCountUnmatched.textContent = safeInt(normalizedRows.length);
-
-        els.unmatchedExitsBody.innerHTML = '';
-        if (normalizedRows.length === 0) {
-            els.unmatchedExitsBody.innerHTML = '<tr><td colspan="6" class="table-empty">No unmatched exit events</td></tr>';
-            return;
-        }
-
-        normalizedRows.forEach((row) => {
-            const clone = els.tplUnmatchedExit.content.cloneNode(true);
-            clone.querySelector('.col-time').textContent = formatTime(row.timestamp);
-            clone.querySelector('.col-plate').textContent = row.plate_number || '';
-            clone.querySelector('.col-camera').textContent = row.camera_role || '';
-            clone.querySelector('.col-reason').textContent = toTitleCaseFromSnake(row.reason || '') || '—';
-
-            renderBadge(
-                clone.querySelector('.col-resolved'),
-                row.resolved ? 'Resolved' : 'Pending',
-                row.resolved ? 'closed' : 'warn',
-            );
-
-            const btn = clone.querySelector('button');
-            btn.dataset.entityId = row.id;
-            btn.dataset.entitySummary = row.plate_number || '';
-            
-            els.unmatchedExitsBody.appendChild(clone);
-        });
-    }
-
-    function startSSE() {
-        if (state.eventSource) return;
-        state.eventSource = new EventSource('/stream/dashboard-events');
-        
-        state.eventSource.onmessage = function(event) {
-            try {
-                const data = JSON.parse(event.data);
-                const runningRoles = Array.isArray(
-                    (data.status && data.status.running_camera_roles)
-                    || (state.statusPayload && state.statusPayload.running_camera_roles)
-                )
-                    ? ((data.status && data.status.running_camera_roles)
-                        || (state.statusPayload && state.statusPayload.running_camera_roles)
-                    ).map((role) => String(role).toLowerCase())
-                    : [];
-                if (data.status) {
-                    if (data.status.server_time) {
-                        state.serverOffset = Date.now() - new Date(data.status.server_time).getTime();
-                    }
-                    
-                    state.statusPayload = data.status;
-                    state.availableCameraRoles = Array.isArray(data.status.camera_roles)
-                        ? data.status.camera_roles.map((role) => String(role).toLowerCase())
-                        : [];
-                    state.defaultCameraRole = String(data.status.default_camera_role || 'entry').toLowerCase();
-
-                    els.detectorStatus.textContent = data.status.detector_ready
-                        ? 'Ready (' + data.status.detector_mode + ')'
-                        : 'Not ready (' + data.status.detector_mode + ')';
-                    setStatusDot(els.detectorDot, data.status.detector_ready ? 'ok' : 'error');
-
-                    els.ocrStatus.textContent = data.status.ocr_ready
-                        ? 'Ready (' + data.status.ocr_mode + ')'
-                        : 'Not ready (' + data.status.ocr_mode + ')';
-                    setStatusDot(els.ocrDot, data.status.ocr_ready ? 'ok' : 'error');
-
-                    renderCameraReadiness('entry', runningRoles.includes('entry'), getCameraDetails('entry'));
-                    renderCameraReadiness('exit', runningRoles.includes('exit'), getCameraDetails('exit'));
-                    renderCameraOverlay('entry', getCameraDetails('entry'), state.latestPayloads.entry || null, runningRoles.includes('entry'));
-                    renderCameraOverlay('exit', getCameraDetails('exit'), state.latestPayloads.exit || null, runningRoles.includes('exit'));
-                    renderOverviewStatus(data.status);
-
-                    if (runningRoles.length > 0) {
-                        setGlobalBadge('LIVE', 'live');
-                    } else {
-                        setGlobalBadge('IDLE', '');
-                    }
-
-                    updateWorkspaceSummary();
-                }
-                
-                if (data.active) renderActiveSessions(data.active);
-                if (data.events) renderRecentEvents(data.events);
-                if (data.logs) {
-                    setStreamLogsFromEvents(data.logs);
-                } else if (data.events) {
-                    setStreamLogsFromEvents(data.events);
-                }
-                if (data.history) renderSessionHistory(data.history);
-                if (data.unmatched) renderUnmatchedExits(data.unmatched);
-                
-                if (data.latest_results) {
-                    Object.entries(data.latest_results).forEach(([role, payload]) => {
-                        if (!payload) return;
-                        
-                        state.latestPayloads[role] = payload;
-                        
-                        // Always update the overlay if the camera is running
-                        if (payload.status !== 'idle' && state.availableCameraRoles.includes(role)) {
-                            const details = getCameraDetails(role);
-                            renderCameraOverlay(role, details, payload, runningRoles.includes(role));
-                        }
-                    });
-
-                    const roleToRender = pickRoleForRecognitionRender(data.latest_results, runningRoles);
-                    const payloadToRender = data.latest_results[roleToRender];
-                    if (payloadToRender) {
-                        renderResult(payloadToRender, { renderJson: false, updateJson: false });
-                        maybeHydrateCameraPayload(roleToRender, payloadToRender, runningRoles);
-                    }
-                    updateWorkspaceSummary();
-                }
-            } catch (e) {
-                console.error("SSE parse error:", e);
-            }
-        };
-        
-        state.eventSource.onerror = function() {
-            setGlobalBadge('ERROR', 'error');
-            console.error("SSE connection error");
-        };
-    }
-    
-    function stopSSE() {
-        if (state.eventSource) {
-            state.eventSource.close();
-            state.eventSource = null;
+            updateWorkspaceSummary();
         }
     }
 
-    async function refreshAllRecords() {
-        // Now handled by SSE, this function can just re-fetch latest if needed.
-        // For backwards compatibility with the manual refresh button:
-        if (state.eventSource) {
-            // Already streaming, but could manually fetch /status again if really needed.
-        } else {
-            startSSE();
-        }
+    function onClick(element, handler) {
+        if (!element) return;
+        element.addEventListener("click", handler);
     }
 
-    function attachStreamErrorHandler(role) {
-        const stream = role === "entry" ? els.entryStream : els.exitStream;
-        const placeholder = role === "entry" ? els.entryPlaceholder : els.exitPlaceholder;
-        const overlay = overlayMap[role];
-        if (!stream || !placeholder) return;
-
-        stream.addEventListener("error", () => {
-            clearImage(stream);
-            placeholder.hidden = false;
-            updateCameraPlaceholder(
-                role,
-                {
-                    state: "No Signal",
-                    title: "Stream unavailable",
-                    note: "Check camera URL and network",
-                },
-                getCameraDetails(role),
-            );
-            if (overlay && overlay.box) {
-                overlay.box.hidden = true;
-            }
-        });
-    }
-
-    els.uploadBtn.addEventListener("click", async () => {
-        if (!els.imageInput.files.length) return;
-
-        const selectedFile = els.imageInput.files[0];
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        const endpoint = isVideoFile(selectedFile) ? "/predict/video" : "/predict/image";
-        els.uploadBtn.disabled = true;
-        setGlobalBadge("PROCESSING", "warn");
-
-        try {
-            const response = await fetch(endpoint, {
-                method: "POST",
-                body: formData,
-            });
-            const payload = await response.json().catch(() => null);
-            if (!response.ok || !payload) {
-                const message = payload && (payload.message || payload.detail)
-                    ? (payload.message || payload.detail)
-                    : "Upload processing failed.";
-                throw new Error(message);
-            }
-            setSourceTab("upload");
-            renderResult(payload);
-        } catch (error) {
-            els.resultJson.textContent = "Upload error: " + (error && error.message ? error.message : "Unknown error.");
-            setGlobalBadge("ERROR", "error");
-        } finally {
-            els.uploadBtn.disabled = false;
-        }
-
-        await refreshStatus();
-        await refreshAllRecords();
+    const {
+        bindRefreshButtons,
+        bindTabInteractions,
+        bindWorkspaceSummaryButtons,
+        jumpToRecordsTab,
+        setRecordsTab,
+        setSourceTab,
+    } = createDashboardNavigation({
+        els,
+        state,
+        sourceTabs,
+        recordsTabs,
+        sourceTabMap,
+        recordsTabMap,
+        emptyUploadPayload,
+        idlePayloadForRole,
+        isCameraRoleConfigured,
+        isCameraRunning,
+        prefersReducedMotion,
+        renderLogEvents,
+        renderMiniSummaryLists,
+        renderResult,
+        updateWorkspaceSummary,
     });
 
-    $("startEntryBtn").addEventListener("click", () => startCamera("entry"));
-    $("stopEntryBtn").addEventListener("click", () => stopCamera("entry"));
-    $("startExitBtn").addEventListener("click", () => startCamera("exit"));
-    $("stopExitBtn").addEventListener("click", () => stopCamera("exit"));
-    els.refreshRecordsBtn.addEventListener("click", refreshAllRecords);
-    if (els.clearStreamLogsBtn) {
-        els.clearStreamLogsBtn.addEventListener("click", () => {
-            state.logEventRows = [];
-            renderLogEvents();
-        });
-    }
-
-    els.refreshJsonBtn.addEventListener("click", async () => {
-        const role = getWorkspaceRole();
-        if (role === "entry" || role === "exit") {
-            await refreshLatestResultForRole(role, { renderJson: true });
-            return;
-        }
-
-        const payload = state.latestPayloads.upload || null;
-        if (payload) {
-            els.resultJson.textContent = JSON.stringify(payload, null, 2);
-            els.jsonUpdated.textContent = "Updated " + formatRelativeTime(new Date().toISOString());
-        } else {
-            els.resultJson.textContent = "No result yet.";
-        }
+    const {
+        bindDashboardModalInteractions,
+        renderProfileModal,
+        syncRecognitionActionButtons,
+    } = createDashboardModals({
+        actionBadgeClass,
+        announceStatus,
+        dedupeRowsById,
+        els,
+        eventActionLabel,
+        formatClockTime,
+        formatRelativeTime,
+        formatTime,
+        humanizeEventNote,
+        jumpToRecordsTab,
+        normalizeEventAction,
+        normalizeTextValue,
+        onClick,
+        safeInt,
+        safeNum,
+        sessionDecisionSummary,
+        setImageWithFallback,
+        setNamedBadge,
+        state,
+        toTitleCaseFromSnake,
+        vehicleLookupBadgeClass,
     });
 
-    if (els.recordsPanel) {
+    const {
+        attachStreamErrorHandler,
+        connectStream,
+        deleteModerationRecord,
+        handleUploadAction,
+        maybeHydrateCameraPayload,
+        refreshAllRecords,
+        refreshDashboard,
+        refreshLatestResultForRole,
+        refreshStatus,
+        startCamera,
+        stopCamera,
+    } = createDashboardRuntime({
+        announceStatus,
+        applyDashboardState,
+        clearImage,
+        dashboardApi,
+        els,
+        formatRelativeTime,
+        getCameraDetails,
+        idlePayloadForRole,
+        isCameraRoleConfigured,
+        isVideoFile,
+        overlayMap,
+        payloadForDisplay,
+        renderCameraOverlay,
+        renderResult,
+        setGlobalBadge,
+        setRefreshBusy,
+        state,
+        updateCameraPlaceholder,
+        updateWorkspaceSummary,
+    });
+
+    function bindCameraControlButtons() {
+        onClick(els.startEntryBtn, () => startCamera("entry", { setSourceTab }));
+        onClick(els.stopEntryBtn, () => stopCamera("entry"));
+        onClick(els.startExitBtn, () => startCamera("exit", { setSourceTab }));
+        onClick(els.stopExitBtn, () => stopCamera("exit"));
+    }
+
+    function bindRecordsPanelInteractions() {
+        if (!els.recordsPanel) return;
+
         els.recordsPanel.addEventListener("click", async (event) => {
             const target = event.target instanceof HTMLElement ? event.target : null;
             if (!target) return;
@@ -1522,6 +750,7 @@
                 openArtifactViewer(
                     artifactButton.dataset.artifactPath,
                     artifactButton.dataset.artifactLabel || "Crop Preview",
+                    artifactButton,
                 );
                 return;
             }
@@ -1536,23 +765,71 @@
         });
     }
 
-    if (els.artifactViewerClose) {
-        els.artifactViewerClose.addEventListener("click", closeArtifactViewer);
-    }
-    if (els.artifactViewer) {
-        els.artifactViewer.addEventListener("click", (event) => {
-            const target = event.target instanceof HTMLElement ? event.target : null;
-            if (!target) return;
-            if (target.closest("[data-artifact-close]")) {
+    function bindArtifactViewerInteractions() {
+        onClick(els.artifactViewerClose, closeArtifactViewer);
+
+        if (els.artifactViewer) {
+            els.artifactViewer.addEventListener("click", (event) => {
+                const target = event.target instanceof HTMLElement ? event.target : null;
+                if (!target) return;
+                if (target.closest("[data-artifact-close]")) {
+                    closeArtifactViewer();
+                }
+            });
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && els.artifactViewer && !els.artifactViewer.hidden) {
                 closeArtifactViewer();
+                return;
+            }
+
+            if (event.key !== "Tab" || !els.artifactViewer || els.artifactViewer.hidden || !els.artifactViewerDialog) {
+                return;
+            }
+
+            const focusableElements = Array.from(
+                els.artifactViewerDialog.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+                ),
+            ).filter((element) => !element.hasAttribute("disabled"));
+
+            if (focusableElements.length === 0) {
+                event.preventDefault();
+                els.artifactViewerDialog.focus();
+                return;
+            }
+
+            const firstElement = focusableElements[0];
+            const lastElement = focusableElements[focusableElements.length - 1];
+
+            if (event.shiftKey && document.activeElement === firstElement) {
+                event.preventDefault();
+                lastElement.focus();
+            } else if (!event.shiftKey && document.activeElement === lastElement) {
+                event.preventDefault();
+                firstElement.focus();
             }
         });
     }
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && els.artifactViewer && !els.artifactViewer.hidden) {
-            closeArtifactViewer();
-        }
-    });
+
+    function bindPrimaryInteractions() {
+        onClick(els.uploadBtn, () => handleUploadAction({ setSourceTab }));
+        bindTabInteractions({ refreshLatestResultForRole });
+        bindCameraControlButtons();
+        bindWorkspaceSummaryButtons({ announceStatus, onClick });
+        bindRefreshButtons({
+            formatRelativeTime,
+            onClick,
+            refreshAllRecords,
+            refreshLatestResultForRole,
+        });
+        bindDashboardModalInteractions();
+        bindRecordsPanelInteractions();
+        bindArtifactViewerInteractions();
+    }
+
+    bindPrimaryInteractions();
 
     attachStreamErrorHandler("entry");
     attachStreamErrorHandler("exit");
@@ -1560,5 +837,10 @@
     setSourceTab("upload");
     setRecordsTab("active");
     renderLogEvents();
-    startSSE();
-})();
+    renderWorkspaceRecentList();
+    updateDailyOverviewMetrics();
+    refreshDashboard({ announceSuccess: false })
+        .catch(() => null)
+        .finally(() => {
+            connectStream();
+        });

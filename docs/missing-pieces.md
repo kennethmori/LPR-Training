@@ -13,19 +13,19 @@ The repository now includes:
 
 ## Remaining Gaps
 
-### 1. Automated Testing
+### 1. Test Coverage Expansion
 
-There is still no formal automated test suite.
+A formal automated test suite now exists under `tests/`.
 
-Missing work:
+Remaining work:
 
-- unit tests for `SessionService` decision rules
-- storage tests for CRUD and moderation flows
-- API tests for camera/session/event endpoints
+- broaden integration coverage for long-running camera loops and role-based stream behavior
+- add more end-to-end regression scenarios for entry, exit, duplicate suppression, and unmatched exits
+- extend upload and moderation-path testing for larger payloads and error handling cases
 
 ### 2. API Contract Strictness
 
-Pydantic schemas exist, but route handlers still mostly build plain dictionaries.
+Pydantic schemas cover most API data endpoints, but some handlers still return ad hoc dictionaries or custom JSON responses.
 
 Missing work:
 
@@ -63,4 +63,4 @@ Missing or ongoing work:
 
 ## Summary
 
-The platform has moved past prototype-only recognition and now includes operational session tracking. The main missing pieces are test coverage, stricter API contracts, and longer-term operational maturity.
+The platform has moved past prototype-only recognition and now includes operational session tracking plus baseline automated tests. The main missing pieces are broader integration coverage, stricter API contracts, and longer-term operational maturity.

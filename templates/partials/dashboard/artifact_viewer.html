@@ -1,0 +1,26 @@
+<div class="artifact-viewer" id="artifactViewer" hidden aria-hidden="true">
+    <button
+        type="button"
+        class="artifact-viewer__backdrop"
+        aria-label="Close crop preview"
+        data-artifact-close
+    ></button>
+    <section
+        class="artifact-viewer__dialog"
+        id="artifactViewerDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="artifactViewerTitle"
+        aria-describedby="artifactViewerMeta"
+        tabindex="-1"
+    >
+        <div class="artifact-viewer__header">
+            <h2 id="artifactViewerTitle">Crop Preview</h2>
+            <button type="button" class="btn-secondary btn-sm" id="artifactViewerClose">Close</button>
+        </div>
+        <p class="artifact-viewer__meta" id="artifactViewerMeta">—</p>
+        <div class="artifact-viewer__body">
+            <img id="artifactViewerImage" alt="Crop preview image">
+        </div>
+    </section>
+</div>

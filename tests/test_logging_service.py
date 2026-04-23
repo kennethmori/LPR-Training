@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
 from src.services.logging_service import LoggingService
+from tests.helpers import create_test_workspace, remove_test_workspace
 
 
 class LoggingServiceTests(unittest.TestCase):
@@ -29,8 +29,9 @@ class LoggingServiceTests(unittest.TestCase):
         )
 
     def test_read_recent_prefers_in_memory_entries_after_append(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = LoggingService(log_path=Path(temp_dir) / "events.jsonl")
+        temp_dir = create_test_workspace(self._testMethodName)
+        try:
+            service = LoggingService(log_path=temp_dir / "events.jsonl")
             service.append(
                 {
                     "timestamp": "2026-01-01T00:00:00+00:00",
@@ -46,6 +47,8 @@ class LoggingServiceTests(unittest.TestCase):
             self.assertEqual(entries[0]["stable_text"], "ABC123")
             self.assertIn("log_id", entries[0])
             self.assertIn("log_source", entries[0])
+        finally:
+            remove_test_workspace(temp_dir)
 
 
 if __name__ == "__main__":

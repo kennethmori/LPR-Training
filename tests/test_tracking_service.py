@@ -4,7 +4,6 @@ import unittest
 
 import numpy as np
 
-from src.core.pipeline import LicensePlatePipeline
 from src.services.result_service import ResultService
 from src.services.tracking_service import PlateTrackingService
 
@@ -41,31 +40,19 @@ class _DummyLogger:
 
 
 class _DummyPipeline:
-    detector = _DummyDetector()
-    ocr_engine = _DummyOCR()
-    postprocessor = _DummyPostProcessor()
-    result_service = ResultService(history_size=5, min_repetitions=1)
-    logging_service = _DummyLogger()
-    settings = {
-        "padding_ratio": 0.05,
-        "resize_width": 320,
-        "preprocess_enabled": False,
-        "log_no_detection_frames": False,
-    }
-    _bbox_iou = staticmethod(LicensePlatePipeline._bbox_iou)
-    _bbox_center_distance_ratio = staticmethod(LicensePlatePipeline._bbox_center_distance_ratio)
-
-    @staticmethod
-    def _build_recognition_event(**kwargs):
-        return kwargs
-
-    @staticmethod
-    def _should_save_event_images(**kwargs):
-        return False
-
-    @staticmethod
-    def _save_event_images(**kwargs):
-        return (None, None)
+    def __init__(self, min_repetitions: int = 1) -> None:
+        self.detector = _DummyDetector()
+        self.ocr_engine = _DummyOCR()
+        self.postprocessor = _DummyPostProcessor()
+        self.result_service = ResultService(history_size=5, min_repetitions=min_repetitions)
+        self.logging_service = _DummyLogger()
+        self.settings = {
+            "padding_ratio": 0.05,
+            "resize_width": 320,
+            "preprocess_enabled": False,
+            "log_no_detection_frames": False,
+            "save_event_images": False,
+        }
 
 
 class PlateTrackingServiceTests(unittest.TestCase):
@@ -96,6 +83,38 @@ class PlateTrackingServiceTests(unittest.TestCase):
         self.assertIsNotNone(payload["recognition_event"])
         self.assertIsNotNone(annotated)
         self.assertIsNotNone(crop)
+
+    def test_recognition_event_threshold_can_be_higher_than_stable_acceptance(self) -> None:
+        service = PlateTrackingService(
+            pipeline=_DummyPipeline(min_repetitions=1),
+            settings={
+                "enabled": True,
+                "detector_every_n_frames": 1,
+                "ocr_cooldown_frames": 0,
+                "ocr_cooldown_seconds": 0.0,
+                "min_plate_width": 20,
+                "min_plate_height": 10,
+                "min_detector_confidence_for_ocr": 0.1,
+                "min_sharpness_for_ocr": 0.0,
+                "stop_ocr_after_stable": False,
+                "recognition_event_min_stable_occurrences": 2,
+                "tracker_backend": "none",
+            },
+            camera_role="entry",
+            source_name="dummy_cam",
+        )
+
+        frame = np.full((120, 240, 3), 255, dtype=np.uint8)
+        first_payload, _first_annotated, _first_crop = service.process_frame(frame, 0)
+        second_payload, _second_annotated, _second_crop = service.process_frame(frame, 1)
+
+        self.assertTrue(first_payload["stable_result"]["accepted"])
+        self.assertEqual(first_payload["stable_result"]["occurrences"], 1)
+        self.assertIsNone(first_payload["recognition_event"])
+
+        self.assertTrue(second_payload["stable_result"]["accepted"])
+        self.assertEqual(second_payload["stable_result"]["occurrences"], 2)
+        self.assertIsNotNone(second_payload["recognition_event"])
 
 
 if __name__ == "__main__":

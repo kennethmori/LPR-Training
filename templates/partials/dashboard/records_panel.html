@@ -1,0 +1,130 @@
+<section class="panel records-panel" aria-label="Session Records">
+    <div class="panel-heading-row">
+        <h2 class="panel-heading">Session Workspace</h2>
+        <button id="refreshRecordsBtn" type="button" class="btn-secondary btn-sm">Refresh</button>
+    </div>
+
+    <div class="records-tabbar" role="tablist" aria-label="Session and event views">
+        <button class="records-tab is-active" id="recordsTabBtnActive" data-record-tab="active" type="button" role="tab" aria-selected="true" aria-controls="recordsViewActive" tabindex="0">Active <span id="tabCountActive">0</span></button>
+        <button class="records-tab" id="recordsTabBtnEvents" data-record-tab="events" type="button" role="tab" aria-selected="false" aria-controls="recordsViewEvents" tabindex="-1">Events <span id="tabCountEvents">0</span></button>
+        <button class="records-tab" id="recordsTabBtnHistory" data-record-tab="history" type="button" role="tab" aria-selected="false" aria-controls="recordsViewHistory" tabindex="-1">History <span id="tabCountHistory">0</span></button>
+        <button class="records-tab" id="recordsTabBtnUnmatched" data-record-tab="unmatched" type="button" role="tab" aria-selected="false" aria-controls="recordsViewUnmatched" tabindex="-1">Unmatched <span id="tabCountUnmatched">0</span></button>
+        <button class="records-tab" id="recordsTabBtnLogs" data-record-tab="logs" type="button" role="tab" aria-selected="false" aria-controls="recordsViewLogs" tabindex="-1">Logs <span id="tabCountLogs">0</span></button>
+    </div>
+
+    <div class="records-panel-body">
+        <div class="records-view is-active" id="recordsViewActive" role="tabpanel" aria-labelledby="recordsTabBtnActive">
+            <div class="table-scroll">
+                <table class="data-table" id="activeSessionsTable">
+                    <thead>
+                        <tr>
+                            <th>Plate</th>
+                            <th>Entry Time</th>
+                            <th>Entry Camera</th>
+                            <th class="col-num">Confidence</th>
+                            <th>Duration</th>
+                            <th>Updated</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeSessionsBody">
+                        <tr><td colspan="8" class="table-empty">No active sessions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="records-view" id="recordsViewEvents" role="tabpanel" aria-labelledby="recordsTabBtnEvents" hidden>
+            <div class="table-scroll">
+                <table class="data-table" id="recentEventsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Camera</th>
+                            <th>Plate</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                            <th>Raw OCR</th>
+                            <th class="col-num">Det. Conf</th>
+                            <th class="col-num">OCR Conf</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentEventsBody">
+                        <tr><td colspan="9" class="table-empty">No events recorded</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="records-view" id="recordsViewHistory" role="tabpanel" aria-labelledby="recordsTabBtnHistory" hidden>
+            <div class="table-scroll">
+                <table class="data-table" id="sessionHistoryTable">
+                    <thead>
+                        <tr>
+                            <th>Plate</th>
+                            <th>Entry Time</th>
+                            <th>Exit Time</th>
+                            <th>Duration</th>
+                            <th>Entry Cam</th>
+                            <th>Exit Cam</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionHistoryBody">
+                        <tr><td colspan="8" class="table-empty">No session history</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="records-view" id="recordsViewUnmatched" role="tabpanel" aria-labelledby="recordsTabBtnUnmatched" hidden>
+            <div class="table-scroll">
+                <table class="data-table" id="unmatchedExitsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Plate</th>
+                            <th>Camera</th>
+                            <th>Reason</th>
+                            <th>Resolved</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unmatchedExitsBody">
+                        <tr><td colspan="6" class="table-empty">No unmatched exit events</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="records-view" id="recordsViewLogs" role="tabpanel" aria-labelledby="recordsTabBtnLogs" hidden>
+            <div class="stream-log-actions">
+                <button id="clearStreamLogsBtn" type="button" class="btn-secondary btn-sm">Clear View</button>
+            </div>
+            <div class="table-scroll">
+                <table class="data-table" id="logsEventsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Camera</th>
+                            <th>Source</th>
+                            <th>Plate</th>
+                            <th>Action</th>
+                            <th>Note</th>
+                            <th>Raw OCR</th>
+                            <th class="col-num">Det. Conf</th>
+                            <th class="col-num">OCR Conf</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsEventsBody">
+                        <tr><td colspan="10" class="table-empty">No event logs yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>

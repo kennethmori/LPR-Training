@@ -1,0 +1,332 @@
+<section class="dashboard-modal" id="profileModal" hidden aria-hidden="true">
+    <button
+        type="button"
+        class="dashboard-modal__backdrop"
+        data-modal-close="profile"
+        aria-label="Close vehicle profile modal"
+    ></button>
+    <div
+        class="dashboard-modal__dialog dashboard-modal__dialog--profile"
+        id="profileModalDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profileModalTitle"
+        tabindex="-1"
+    >
+        <header class="dashboard-modal__header">
+            <div class="dashboard-modal__header-copy">
+                <p class="dashboard-modal__eyebrow">Vehicle Profile</p>
+                <h2 id="profileModalTitle">Vehicle Profile</h2>
+                <p class="dashboard-modal__subtitle" id="profileModalSubtitle">
+                    Complete operator view for the currently recognized vehicle.
+                </p>
+            </div>
+            <div class="dashboard-modal__header-actions">
+                <span class="badge" id="profileModalStatusBadge">No Profile</span>
+                <span class="badge" id="profileModalLookupBadge">Unregistered</span>
+                <button type="button" class="btn-secondary btn-sm" data-modal-close="profile">Close</button>
+            </div>
+        </header>
+
+        <div class="dashboard-modal__body dashboard-modal__body--profile">
+            <section class="profile-modal-hero">
+                <div class="profile-modal-hero__identity">
+                    <div class="profile-avatar profile-avatar--modal" id="profileModalAvatar" data-initials="--" aria-hidden="true"></div>
+                    <div class="profile-modal-hero__copy">
+                        <div class="profile-modal-hero__eyebrow" id="profileModalPlate">Plate —</div>
+                        <div class="profile-modal-hero__title" id="profileModalOwnerName">No matched profile</div>
+                        <p class="profile-modal-hero__meta" id="profileModalMeta">Waiting for a matched registration profile.</p>
+                        <p class="profile-modal-hero__notes" id="profileModalNotes">
+                            The side panel stays as the quick summary. This modal expands the full records and statistics view.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="profile-modal-stats" aria-label="Profile statistics">
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Last Seen</span>
+                        <span class="modal-stat-card__value" id="profileModalLastSeen">—</span>
+                    </article>
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Recent Events</span>
+                        <span class="modal-stat-card__value" id="profileModalRecentEvents">0</span>
+                    </article>
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Open Sessions</span>
+                        <span class="modal-stat-card__value" id="profileModalOpenSessions">0</span>
+                    </article>
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Session History</span>
+                        <span class="modal-stat-card__value" id="profileModalHistoryCount">0</span>
+                    </article>
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Documents</span>
+                        <span class="modal-stat-card__value" id="profileModalDocumentsCount">0</span>
+                    </article>
+                    <article class="modal-stat-card">
+                        <span class="modal-stat-card__label">Manual Check</span>
+                        <span class="modal-stat-card__value" id="profileModalManualCheck">—</span>
+                    </article>
+                </div>
+            </section>
+
+            <div class="profile-modal-grid">
+                <section class="profile-modal-section">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Owner and Vehicle</h3>
+                    </div>
+                    <dl class="profile-modal-kv">
+                        <div class="profile-modal-kv__row">
+                            <dt>Category</dt>
+                            <dd id="profileModalCategory">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Affiliation</dt>
+                            <dd id="profileModalAffiliation">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Reference</dt>
+                            <dd id="profileModalReference">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Vehicle ID</dt>
+                            <dd id="profileModalVehicleId">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Vehicle Type</dt>
+                            <dd id="profileModalVehicleType">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Make / Model</dt>
+                            <dd id="profileModalMakeModel">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Color</dt>
+                            <dd id="profileModalColor">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Status</dt>
+                            <dd id="profileModalRegistrationStatus">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Approval Date</dt>
+                            <dd id="profileModalApprovalDate">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Valid Until</dt>
+                            <dd id="profileModalExpiry">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Record Source</dt>
+                            <dd id="profileModalRecordSource">—</dd>
+                        </div>
+                        <div class="profile-modal-kv__row">
+                            <dt>Matched Plate</dt>
+                            <dd id="profileModalPlateValue">—</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section class="profile-modal-section">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Registration Documents</h3>
+                        <span class="profile-modal-section-note" id="profileModalDocumentsNote">All available supporting records</span>
+                    </div>
+                    <ul class="profile-modal-list" id="profileModalDocumentsList">
+                        <li class="profile-modal-empty">No document metadata.</li>
+                    </ul>
+                </section>
+
+                <section class="profile-modal-section">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Recent Gate History</h3>
+                        <span class="profile-modal-section-note" id="profileModalHistoryNote">Last recorded entry and exit actions</span>
+                    </div>
+                    <ul class="profile-modal-list" id="profileModalHistoryList">
+                        <li class="profile-modal-empty">No recent history.</li>
+                    </ul>
+                </section>
+
+                <section class="profile-modal-section profile-modal-section--wide">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Recognition Activity</h3>
+                        <span class="profile-modal-section-note" id="profileModalEventsNote">Current dashboard records filtered for this vehicle</span>
+                    </div>
+                    <ul class="profile-modal-list profile-modal-list--dense" id="profileModalEventsList">
+                        <li class="profile-modal-empty">No recognition activity yet.</li>
+                    </ul>
+                </section>
+
+                <section class="profile-modal-section profile-modal-section--wide">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Session Timeline</h3>
+                        <span class="profile-modal-section-note" id="profileModalSessionsNote">Open and completed sessions associated with this profile</span>
+                    </div>
+                    <ul class="profile-modal-list profile-modal-list--dense" id="profileModalSessionsList">
+                        <li class="profile-modal-empty">No session records yet.</li>
+                    </ul>
+                </section>
+            </div>
+        </div>
+
+        <footer class="dashboard-modal__footer">
+            <p class="dashboard-modal__footer-note" id="profileModalFooterNote">
+                This modal combines the live recognition payload with the dashboard records already loaded in this session.
+            </p>
+            <div class="dashboard-modal__footer-actions">
+                <button id="profileModalRecordsBtn" type="button" class="btn-secondary">Open Detailed Records</button>
+                <button type="button" class="btn-primary" data-modal-close="profile">Close</button>
+            </div>
+        </footer>
+    </div>
+</section>
+
+<section class="dashboard-modal" id="manualOverrideModal" hidden aria-hidden="true">
+    <button
+        type="button"
+        class="dashboard-modal__backdrop"
+        data-modal-close="manual"
+        aria-label="Close manual override modal"
+    ></button>
+    <div
+        class="dashboard-modal__dialog dashboard-modal__dialog--override"
+        id="manualOverrideDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="manualOverrideTitle"
+        tabindex="-1"
+    >
+        <header class="dashboard-modal__header">
+            <div class="dashboard-modal__header-copy">
+                <p class="dashboard-modal__eyebrow">Manual Override</p>
+                <h2 id="manualOverrideTitle">Manual Override Review</h2>
+                <p class="dashboard-modal__subtitle" id="manualOverrideSubtitle">
+                    Compare the live crop against the predicted values before sending the recognition for review.
+                </p>
+            </div>
+            <div class="dashboard-modal__header-actions">
+                <span class="badge" id="manualOverrideStateBadge">Idle</span>
+                <span class="badge" id="manualOverrideLookupBadge">Unregistered</span>
+                <button type="button" class="btn-secondary btn-sm" data-modal-close="manual">Close</button>
+            </div>
+        </header>
+
+        <div class="dashboard-modal__body dashboard-modal__body--override">
+            <div class="override-modal-grid">
+                <section class="override-panel">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Visual Comparison</h3>
+                    </div>
+                    <div class="override-visual-grid">
+                        <article class="override-visual-card">
+                            <div class="override-visual-head">
+                                <h4>Plate Crop</h4>
+                                <span id="manualOverrideCropMeta">Waiting for a crop</span>
+                            </div>
+                            <div class="frame override-frame">
+                                <img id="manualOverrideCropImage" alt="Recognition crop preview" hidden>
+                                <span class="frame-placeholder" id="manualOverrideCropPlaceholder">No cropped plate available</span>
+                            </div>
+                        </article>
+
+                        <article class="override-visual-card">
+                            <div class="override-visual-head">
+                                <h4>Annotated Frame</h4>
+                                <span id="manualOverrideFrameMeta">Current recognition frame</span>
+                            </div>
+                            <div class="frame override-frame override-frame--source">
+                                <img id="manualOverrideSourceImage" alt="Annotated recognition frame" hidden>
+                                <span class="frame-placeholder" id="manualOverrideSourcePlaceholder">No frame preview available</span>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="override-panel">
+                    <div class="panel-heading-row panel-heading-row--compact">
+                        <h3 class="panel-heading panel-heading--flush">Predicted Values</h3>
+                    </div>
+                    <div class="override-values-grid">
+                        <div class="data-row">
+                            <span class="data-label">Raw OCR</span>
+                            <span class="data-value" id="manualOverrideRawText">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Cleaned Text</span>
+                            <span class="data-value" id="manualOverrideCleanedText">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Stable Text</span>
+                            <span class="data-value" id="manualOverrideStableText">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Det. Confidence</span>
+                            <span class="data-value" id="manualOverrideDetConfidence">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">OCR Confidence</span>
+                            <span class="data-value" id="manualOverrideOcrConfidence">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Session Decision</span>
+                            <span class="data-value" id="manualOverrideDecisionValue">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Timestamp</span>
+                            <span class="data-value" id="manualOverrideTimeValue">—</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Source</span>
+                            <span class="data-value" id="manualOverrideSourceValue">—</span>
+                        </div>
+                    </div>
+
+                    <div class="override-form">
+                        <label for="manualOverridePlateInput">Corrected Plate</label>
+                        <input id="manualOverridePlateInput" type="text" placeholder="Enter confirmed plate text">
+
+                        <label for="manualOverrideActionSelect">Operator Action</label>
+                        <select id="manualOverrideActionSelect">
+                            <option value="confirm_predicted">Confirm predicted plate</option>
+                            <option value="correct_plate">Correct plate text</option>
+                            <option value="open_session_manually">Open session manually</option>
+                            <option value="close_session_manually">Close session manually</option>
+                            <option value="false_read">Mark as false read</option>
+                            <option value="visitor_check">Treat as visitor / manual check</option>
+                        </select>
+
+                        <label for="manualOverrideReasonInput">Review Notes</label>
+                        <textarea
+                            id="manualOverrideReasonInput"
+                            rows="4"
+                            placeholder="Explain why this recognition needs manual review or correction."
+                        ></textarea>
+                    </div>
+
+                    <section class="override-draft">
+                        <div class="panel-heading-row panel-heading-row--compact">
+                            <h3 class="panel-heading panel-heading--flush">Review Draft</h3>
+                        </div>
+                        <p class="override-draft__summary" id="manualOverrideDraftSummary">
+                            No draft yet. Use the fields above to prepare the operator review summary.
+                        </p>
+                        <p class="override-draft__note" id="manualOverrideBackendNote">
+                            This prepares the operator review in the UI. A final audited apply action still needs dedicated backend endpoints.
+                        </p>
+                    </section>
+                </section>
+            </div>
+        </div>
+
+        <footer class="dashboard-modal__footer">
+            <p class="dashboard-modal__footer-note" id="manualOverrideStatusText">
+                Compare the crop image and the predicted values before escalating to the detailed records workspace.
+            </p>
+            <div class="dashboard-modal__footer-actions">
+                <button id="manualOverrideOpenRecordsBtn" type="button" class="btn-secondary">Open Detailed Records</button>
+                <button id="manualOverridePrepareBtn" type="button" class="btn-primary">Prepare Review Draft</button>
+                <button type="button" class="btn-secondary" data-modal-close="manual">Close</button>
+            </div>
+        </footer>
+    </div>
+</section>

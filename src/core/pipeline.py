@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-import base64
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 
-from src.core.cropper import annotate_detection, crop_plate, preprocess_for_ocr, resize_for_ocr
+from src.core.bbox import bbox_center_distance_ratio, bbox_iou, bbox_scale_ratio
+from src.core.cropper import (
+    annotate_detection,
+    crop_plate,
+    preprocess_for_ocr,
+    rectify_plate_for_ocr,
+    resize_for_ocr,
+)
+from src.core.pipeline_payloads import empty_stable_result, encode_image_base64
+from src.core.recognition_events import build_stable_recognition_event
 
 
 class LicensePlatePipeline:
@@ -50,9 +57,9 @@ class LicensePlatePipeline:
         detection_time_ms = (time.perf_counter() - started) * 1000
 
         if not detections:
-            previous_stable = self._empty_stable_result()
+            previous_stable = empty_stable_result()
             if source_type in {"camera", "video"}:
-                previous_stable = self.result_service.latest_for(resolved_stream_key) or self._empty_stable_result()
+                previous_stable = self.result_service.latest_for(resolved_stream_key) or empty_stable_result()
             payload = {
                 "source_type": source_type,
                 "camera_role": camera_role,
@@ -73,14 +80,15 @@ class LicensePlatePipeline:
                 },
                 "recognition_event": None,
             }
-            log_no_detection_frames = bool(self.settings.get("log_no_detection_frames", False))
-            if source_type not in {"camera", "video"} or log_no_detection_frames:
+            if source_type not in {"camera", "video"} or bool(self.settings.get("log_no_detection_frames", False)):
                 self.logging_service.append(
                     {
                         "timestamp": timestamp,
                         "source_type": source_type,
                         "camera_role": camera_role,
+                        "source_name": source_name,
                         "plate_detected": False,
+                        "plate_number": previous_stable["value"],
                         "detector_confidence": 0.0,
                         "ocr_confidence": 0.0,
                         "raw_text": "",
@@ -97,20 +105,15 @@ class LicensePlatePipeline:
             bbox=best_detection["bbox"],
             padding_ratio=float(self.settings.get("padding_ratio", 0.05)),
         )
-
+        crop = rectify_plate_for_ocr(crop, self.settings)
         resized_crop = resize_for_ocr(crop, int(self.settings.get("resize_width", 320)))
         ocr_input = preprocess_for_ocr(resized_crop, self.settings)
-        prior_stream_state = self.stream_states.get(resolved_stream_key)
-        ocr_started = time.perf_counter()
-        if self._should_reuse_ocr(prior_stream_state, padded_bbox):
-            ocr_result = dict(prior_stream_state["ocr_result"])
-            cleaned_text = str(prior_stream_state["cleaned_text"])
-            ocr_time_ms = 0.0
-        else:
-            ocr_result = self.ocr_engine.read(ocr_input)
-            ocr_time_ms = (time.perf_counter() - ocr_started) * 1000
-            cleaned_text = self.postprocessor.clean(ocr_result["raw_text"])
 
+        ocr_result, cleaned_text, ocr_time_ms = self._resolve_ocr_result(
+            ocr_input=ocr_input,
+            padded_bbox=padded_bbox,
+            stream_key=resolved_stream_key,
+        )
         stable_result = self.result_service.update(
             cleaned_text,
             float(ocr_result["confidence"]),
@@ -132,39 +135,24 @@ class LicensePlatePipeline:
             text=displayed_text,
         )
 
-        crop_path: str | None = None
-        annotated_path: str | None = None
-        recognition_event: dict[str, Any] | None = None
-        if stable_result["accepted"]:
-            if self._should_save_event_images(
-                source_type=source_type,
-                stream_key=resolved_stream_key,
-                plate_number=stable_result["value"],
-            ):
-                crop_path, annotated_path = self._save_event_images(
-                    timestamp=timestamp,
-                    camera_role=camera_role,
-                    plate_number=stable_result["value"],
-                    annotated=annotated,
-                    crop=resized_crop,
-                )
-            recognition_event = self._build_recognition_event(
-                timestamp=timestamp,
-                camera_role=camera_role,
-                source_name=source_name,
-                source_type=source_type,
-                raw_text=ocr_result["raw_text"],
-                cleaned_text=cleaned_text,
-                stable_text=stable_result["value"],
-                plate_number=stable_result["value"],
-                detector_confidence=float(best_detection["confidence"]),
-                ocr_confidence=float(ocr_result["confidence"]),
-                ocr_engine=str(ocr_result["engine"]),
-                crop_path=crop_path,
-                annotated_frame_path=annotated_path,
-                is_stable=True,
-                stable_occurrences=int(stable_result.get("occurrences", 0)),
-            )
+        recognition_event = build_stable_recognition_event(
+            settings=self.settings,
+            output_paths=self.output_paths,
+            last_saved_artifacts=self.last_saved_artifacts,
+            timestamp=timestamp,
+            camera_role=camera_role,
+            source_name=source_name,
+            source_type=source_type,
+            stream_key=resolved_stream_key,
+            raw_text=str(ocr_result["raw_text"]),
+            cleaned_text=cleaned_text,
+            stable_result=stable_result,
+            detector_confidence=float(best_detection["confidence"]),
+            ocr_confidence=float(ocr_result["confidence"]),
+            ocr_engine=str(ocr_result["engine"]),
+            annotated=annotated,
+            crop=resized_crop,
+        )
 
         payload = {
             "source_type": source_type,
@@ -197,7 +185,9 @@ class LicensePlatePipeline:
                 "timestamp": timestamp,
                 "source_type": source_type,
                 "camera_role": camera_role,
+                "source_name": source_name,
                 "plate_detected": True,
+                "plate_number": stable_result["value"] or cleaned_text,
                 "detector_confidence": float(best_detection["confidence"]),
                 "ocr_confidence": float(ocr_result["confidence"]),
                 "raw_text": ocr_result["raw_text"],
@@ -209,68 +199,24 @@ class LicensePlatePipeline:
 
         return payload, annotated, resized_crop
 
-    def _build_recognition_event(
+    def _resolve_ocr_result(
         self,
-        timestamp: str,
-        camera_role: str,
-        source_name: str,
-        source_type: str,
-        raw_text: str,
-        cleaned_text: str,
-        stable_text: str,
-        plate_number: str,
-        detector_confidence: float,
-        ocr_confidence: float,
-        ocr_engine: str,
-        crop_path: str | None,
-        annotated_frame_path: str | None,
-        is_stable: bool,
-        stable_occurrences: int = 0,
-    ) -> dict[str, Any]:
-        return {
-            "timestamp": timestamp,
-            "camera_role": camera_role,
-            "source_name": source_name,
-            "source_type": source_type,
-            "raw_text": raw_text,
-            "cleaned_text": cleaned_text,
-            "stable_text": stable_text,
-            "plate_number": plate_number,
-            "detector_confidence": detector_confidence,
-            "ocr_confidence": ocr_confidence,
-            "ocr_engine": ocr_engine,
-            "crop_path": crop_path,
-            "annotated_frame_path": annotated_frame_path,
-            "is_stable": is_stable,
-            "stable_occurrences": stable_occurrences,
-        }
+        *,
+        ocr_input: np.ndarray,
+        padded_bbox: dict[str, int],
+        stream_key: str,
+    ) -> tuple[dict[str, Any], str, float]:
+        prior_stream_state = self.stream_states.get(stream_key)
+        ocr_started = time.perf_counter()
+        if self._should_reuse_ocr(prior_stream_state, padded_bbox):
+            ocr_result = dict(prior_stream_state["ocr_result"])
+            cleaned_text = str(prior_stream_state["cleaned_text"])
+            return ocr_result, cleaned_text, 0.0
 
-    def _safe_token(self, value: str) -> str:
-        cleaned = "".join(character if character.isalnum() else "_" for character in value.upper())
-        return cleaned.strip("_") or "UNKNOWN"
-
-    def _save_event_images(
-        self,
-        timestamp: str,
-        camera_role: str,
-        plate_number: str,
-        annotated: np.ndarray,
-        crop: np.ndarray,
-    ) -> tuple[str | None, str | None]:
-        timestamp_token = timestamp.replace(":", "").replace("-", "").replace("+", "_").replace(".", "_")
-        role_token = self._safe_token(camera_role)
-        plate_token = self._safe_token(plate_number)
-        base_name = f"{role_token}_{timestamp_token}_{plate_token}"
-
-        crop_path = self.output_paths["crops"] / f"{base_name}.jpg"
-        annotated_path = self.output_paths["annotated"] / f"{base_name}.jpg"
-
-        crop_ok = cv2.imwrite(str(crop_path), crop)
-        annotated_ok = cv2.imwrite(str(annotated_path), annotated)
-        return (
-            str(crop_path) if crop_ok else None,
-            str(annotated_path) if annotated_ok else None,
-        )
+        ocr_result = self.ocr_engine.read(ocr_input)
+        cleaned_text = self.postprocessor.clean(ocr_result["raw_text"])
+        ocr_time_ms = (time.perf_counter() - ocr_started) * 1000
+        return ocr_result, cleaned_text, ocr_time_ms
 
     def _should_reuse_ocr(self, stream_state: dict[str, Any] | None, bbox: dict[str, int]) -> bool:
         if not bool(self.settings.get("reuse_when_bbox_stable", False)):
@@ -295,83 +241,25 @@ class LicensePlatePipeline:
 
         min_iou = float(self.settings.get("reuse_bbox_iou_threshold", 0.9) or 0.9)
         max_center_distance_ratio = float(self.settings.get("reuse_center_distance_ratio", 0.08) or 0.08)
-        return (
-            self._bbox_iou(previous_bbox, bbox) >= min_iou
-            and self._bbox_center_distance_ratio(previous_bbox, bbox) <= max_center_distance_ratio
-        )
+        current_iou = bbox_iou(previous_bbox, bbox)
+        center_distance_ratio = bbox_center_distance_ratio(previous_bbox, bbox)
 
-    def _should_save_event_images(self, source_type: str, stream_key: str, plate_number: str) -> bool:
-        if not bool(self.settings.get("save_event_images", True)):
+        if center_distance_ratio > max_center_distance_ratio:
             return False
-        if source_type == "camera" and not bool(self.settings.get("save_camera_event_images", True)):
-            return False
-        if source_type == "upload" and not bool(self.settings.get("save_upload_event_images", True)):
-            return False
-        if source_type == "video" and not bool(self.settings.get("save_video_event_images", False)):
-            return False
-
-        cooldown_seconds = max(float(self.settings.get("save_cooldown_seconds", 0.0) or 0.0), 0.0)
-        if cooldown_seconds <= 0:
+        if current_iou >= min_iou:
             return True
-
-        save_key = (source_type, stream_key, self._safe_token(plate_number))
-        now = time.perf_counter()
-        last_saved = self.last_saved_artifacts.get(save_key)
-        if last_saved is not None and (now - last_saved) < cooldown_seconds:
+        if not bool(self.settings.get("reuse_allow_scale_fallback", True)):
             return False
 
-        self.last_saved_artifacts[save_key] = now
-        return True
+        max_scale_ratio = max(float(self.settings.get("reuse_max_scale_ratio", 2.5) or 2.5), 1.0)
+        return bbox_scale_ratio(previous_bbox, bbox) <= max_scale_ratio
 
     def clear_stream_state(self, stream_key: str) -> None:
         self.stream_states.pop(stream_key, None)
         self.result_service.clear(stream_key)
 
-    @staticmethod
-    def _bbox_iou(first: dict[str, int], second: dict[str, int]) -> float:
-        left = max(int(first["x1"]), int(second["x1"]))
-        top = max(int(first["y1"]), int(second["y1"]))
-        right = min(int(first["x2"]), int(second["x2"]))
-        bottom = min(int(first["y2"]), int(second["y2"]))
-
-        intersection_width = max(0, right - left)
-        intersection_height = max(0, bottom - top)
-        intersection_area = intersection_width * intersection_height
-        if intersection_area <= 0:
-            return 0.0
-
-        first_area = max(0, int(first["x2"]) - int(first["x1"])) * max(0, int(first["y2"]) - int(first["y1"]))
-        second_area = max(0, int(second["x2"]) - int(second["x1"])) * max(0, int(second["y2"]) - int(second["y1"]))
-        union_area = first_area + second_area - intersection_area
-        if union_area <= 0:
-            return 0.0
-        return intersection_area / union_area
-
-    @staticmethod
-    def _bbox_center_distance_ratio(first: dict[str, int], second: dict[str, int]) -> float:
-        first_center_x = (int(first["x1"]) + int(first["x2"])) / 2.0
-        first_center_y = (int(first["y1"]) + int(first["y2"])) / 2.0
-        second_center_x = (int(second["x1"]) + int(second["x2"])) / 2.0
-        second_center_y = (int(second["y1"]) + int(second["y2"])) / 2.0
-
-        distance = ((first_center_x - second_center_x) ** 2 + (first_center_y - second_center_y) ** 2) ** 0.5
-        reference_width = max(int(first["x2"]) - int(first["x1"]), int(second["x2"]) - int(second["x1"]), 1)
-        return distance / reference_width
-
-    @staticmethod
-    def _empty_stable_result() -> dict[str, Any]:
-        return {
-            "value": "",
-            "confidence": 0.0,
-            "occurrences": 0,
-            "accepted": False,
-        }
-
-    @staticmethod
-    def encode_image_base64(image: np.ndarray | None) -> str | None:
-        if image is None or image.size == 0:
-            return None
-        ok, encoded = cv2.imencode(".jpg", image)
-        if not ok:
-            return None
-        return base64.b64encode(encoded.tobytes()).decode("ascii")
+    _bbox_iou = staticmethod(bbox_iou)
+    _bbox_center_distance_ratio = staticmethod(bbox_center_distance_ratio)
+    _bbox_scale_ratio = staticmethod(bbox_scale_ratio)
+    _empty_stable_result = staticmethod(empty_stable_result)
+    encode_image_base64 = staticmethod(encode_image_base64)

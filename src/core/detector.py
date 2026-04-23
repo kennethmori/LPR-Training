@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
+import os
+import time
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class PlateDetector:
@@ -17,6 +23,18 @@ class PlateDetector:
         self.backend = "ultralytics"
         self.onnx_input_name: str | None = None
         self.onnx_output_names: list[str] | None = None
+        self.onnx_available_providers: list[str] = []
+        self.onnx_active_providers: list[str] = []
+        self._onnx_exception_types: tuple[type[BaseException], ...] = (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            OSError,
+        )
+        self._onnx_run_lock = Lock()
+        self._serialize_onnx_runs = False
+        self._last_error_log_at: dict[str, float] = {}
         self._load()
 
     def _load(self) -> None:
@@ -33,6 +51,15 @@ class PlateDetector:
             return "onnxruntime"
         return "ultralytics"
 
+    def _log_throttled_exception(self, key: str, message: str) -> None:
+        interval_seconds = max(float(self.settings.get("error_log_interval_seconds", 5.0) or 5.0), 0.0)
+        now = time.monotonic()
+        last_logged_at = self._last_error_log_at.get(key)
+        if last_logged_at is not None and interval_seconds > 0 and (now - last_logged_at) < interval_seconds:
+            return
+        self._last_error_log_at[key] = now
+        logger.exception(message)
+
     def _load_ultralytics(self) -> None:
         if not self.weights_path.exists():
             self.mode = "missing_weights"
@@ -40,7 +67,11 @@ class PlateDetector:
 
         try:
             from ultralytics import YOLO
-        except Exception:
+        except (ImportError, OSError):
+            self._log_throttled_exception(
+                "ultralytics_import",
+                "Failed to import Ultralytics detector backend.",
+            )
             self.mode = "ultralytics_not_installed"
             return
 
@@ -48,7 +79,8 @@ class PlateDetector:
             self.model = YOLO(str(self.weights_path))
             self.mode = "yolo"
             self.ready = True
-        except Exception:
+        except (RuntimeError, ValueError, TypeError, AttributeError, OSError):
+            logger.exception("Failed to load Ultralytics detector weights from '%s'.", self.weights_path)
             self.model = None
             self.mode = "load_failed"
             self.ready = False
@@ -62,18 +94,24 @@ class PlateDetector:
 
         try:
             import onnxruntime as ort
-        except Exception:
+        except (ImportError, OSError):
+            self._log_throttled_exception(
+                "onnxruntime_import",
+                "Failed to import ONNX Runtime detector backend.",
+            )
             self.mode = "onnxruntime_not_installed"
             self.ready = False
             return
 
+        self._onnx_exception_types = self._resolve_onnx_exception_types(ort)
+
         try:
-            session_options = ort.SessionOptions()
-            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            session = ort.InferenceSession(
-                str(onnx_path),
-                sess_options=session_options,
-                providers=self._resolve_onnx_providers(ort),
+            configured_providers = self._resolve_onnx_providers(ort)
+            self.onnx_available_providers = list(ort.get_available_providers())
+            session = self._create_onnx_session(
+                ort=ort,
+                onnx_path=onnx_path,
+                providers=configured_providers,
             )
             inputs = session.get_inputs()
             if not inputs:
@@ -82,14 +120,102 @@ class PlateDetector:
             self.model = session
             self.onnx_input_name = inputs[0].name
             self.onnx_output_names = [output.name for output in session.get_outputs()]
-            self.mode = f"onnxruntime:{onnx_path.name}"
+            self.onnx_active_providers = list(session.get_providers())
+            self._serialize_onnx_runs = self._uses_directml(self.onnx_active_providers)
+            self.mode = self._format_onnx_mode(
+                onnx_path=onnx_path,
+                active_providers=self.onnx_active_providers,
+            )
             self.ready = True
-        except Exception:
+        except self._onnx_exception_types:
+            logger.exception("Failed to initialize ONNX detector from '%s'.", onnx_path)
             self.model = None
             self.onnx_input_name = None
             self.onnx_output_names = None
+            self.onnx_available_providers = []
+            self.onnx_active_providers = []
+            self._serialize_onnx_runs = False
             self.mode = "load_failed"
             self.ready = False
+
+    def _create_onnx_session(self, ort: Any, onnx_path: Path, providers: list[str]) -> Any:
+        session_options = self._build_onnx_session_options(ort, providers=providers)
+        try:
+            return ort.InferenceSession(
+                str(onnx_path),
+                sess_options=session_options,
+                providers=providers,
+            )
+        except self._onnx_exception_types:
+            if not self._uses_directml(providers):
+                raise
+
+            self._log_throttled_exception(
+                "onnx_directml_session_init",
+                "DirectML ONNX session creation failed; retrying with CPUExecutionProvider.",
+            )
+
+            cpu_providers = self._cpu_only_provider_list(ort.get_available_providers())
+            if not cpu_providers:
+                raise
+
+            cpu_session_options = self._build_onnx_session_options(ort, providers=cpu_providers)
+            return ort.InferenceSession(
+                str(onnx_path),
+                sess_options=cpu_session_options,
+                providers=cpu_providers,
+            )
+
+    @staticmethod
+    def _resolve_onnx_exception_types(ort: Any) -> tuple[type[BaseException], ...]:
+        exception_types: list[type[BaseException]] = [
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            OSError,
+        ]
+
+        pybind_state = getattr(getattr(ort, "capi", None), "onnxruntime_pybind11_state", None)
+        for candidate_name in (
+            "OnnxRuntimeError",
+            "Fail",
+            "InvalidArgument",
+            "InvalidGraph",
+            "NoModel",
+            "NotImplemented",
+            "RuntimeException",
+        ):
+            candidate = getattr(pybind_state, candidate_name, None)
+            if isinstance(candidate, type) and issubclass(candidate, BaseException):
+                exception_types.append(candidate)
+
+        deduped: list[type[BaseException]] = []
+        for exc_type in exception_types:
+            if exc_type not in deduped:
+                deduped.append(exc_type)
+        return tuple(deduped)
+
+    def _build_onnx_session_options(self, ort: Any, *, providers: list[str]) -> Any:
+        session_options = ort.SessionOptions()
+        session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        max_threads = max(int(os.cpu_count() or 1), 1)
+        intra_op_threads = self._resolve_onnx_thread_count(
+            self.settings.get("onnx_intra_op_threads"),
+            max_threads=max_threads,
+        )
+        inter_op_threads = self._resolve_onnx_thread_count(
+            self.settings.get("onnx_inter_op_threads"),
+            max_threads=max_threads,
+        )
+        if intra_op_threads is not None:
+            session_options.intra_op_num_threads = intra_op_threads
+        if inter_op_threads is not None:
+            session_options.inter_op_num_threads = inter_op_threads
+        if self._uses_directml(providers):
+            session_options.enable_mem_pattern = False
+            session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        return session_options
 
     def _resolve_onnx_providers(self, ort: Any) -> list[str]:
         available = list(ort.get_available_providers())
@@ -113,6 +239,32 @@ class PlateDetector:
         if not providers and "CPUExecutionProvider" in available:
             providers = ["CPUExecutionProvider"]
         return providers or available
+
+    @staticmethod
+    def _uses_directml(providers: list[str]) -> bool:
+        return any(str(provider).strip() == "DmlExecutionProvider" for provider in providers)
+
+    @staticmethod
+    def _cpu_only_provider_list(available: list[str]) -> list[str]:
+        if "CPUExecutionProvider" in available:
+            return ["CPUExecutionProvider"]
+        return []
+
+    @staticmethod
+    def _format_onnx_mode(onnx_path: Path, active_providers: list[str]) -> str:
+        primary_provider = str(active_providers[0]).strip() if active_providers else "unknown_provider"
+        return f"onnxruntime:{primary_provider}:{onnx_path.name}"
+
+    @staticmethod
+    def _resolve_onnx_thread_count(value: Any, *, max_threads: int) -> int | None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+
+        if parsed <= 0:
+            return None
+        return min(parsed, max_threads)
 
     def _onnx_weights_path(self) -> Path:
         configured = self.settings.get("onnx_weights_path")
@@ -177,8 +329,13 @@ class PlateDetector:
         tensor, scale, pad_left, pad_top = self._preprocess_for_onnx(image, input_size)
 
         try:
-            outputs = self.model.run(self.onnx_output_names, {self.onnx_input_name: tensor})
-        except Exception:
+            if self._serialize_onnx_runs:
+                with self._onnx_run_lock:
+                    outputs = self.model.run(self.onnx_output_names, {self.onnx_input_name: tensor})
+            else:
+                outputs = self.model.run(self.onnx_output_names, {self.onnx_input_name: tensor})
+        except self._onnx_exception_types:
+            self._log_throttled_exception("onnx_inference", "ONNX detector inference failed.")
             return []
 
         predictions = self._extract_onnx_predictions(outputs)
@@ -317,7 +474,9 @@ class PlateDetector:
         original_shape: tuple[int, ...],
     ) -> list[dict[str, Any]]:
         confidence_threshold = float(self.settings.get("confidence_threshold", 0.3))
-        detections: list[dict[str, Any]] = []
+        boxes_for_nms: list[list[int]] = []
+        selected_scores: list[float] = []
+        candidate_rows: list[tuple[int, dict[str, int], float]] = []
 
         for row in predictions:
             if row.shape[0] < 6:
@@ -334,6 +493,30 @@ class PlateDetector:
                 pad_top=pad_top,
                 original_shape=original_shape,
             )
+            width = max(bbox["x2"] - bbox["x1"], 1)
+            height = max(bbox["y2"] - bbox["y1"], 1)
+            boxes_for_nms.append([bbox["x1"], bbox["y1"], width, height])
+            selected_scores.append(confidence)
+            candidate_rows.append((class_index, bbox, confidence))
+
+        if not candidate_rows:
+            return []
+
+        # Some exported ONNX models still emit near-duplicate rows even in the
+        # compact Nx6 format. Apply one more NMS pass to keep live tracking from
+        # creating multiple overlapping tracks for the same plate.
+        kept_indices = cv2.dnn.NMSBoxes(
+            bboxes=boxes_for_nms,
+            scores=selected_scores,
+            score_threshold=confidence_threshold,
+            nms_threshold=float(self.settings.get("iou_threshold", 0.5)),
+        )
+        if len(kept_indices) == 0:
+            return []
+
+        detections: list[dict[str, Any]] = []
+        for kept_index in np.array(kept_indices).reshape(-1):
+            class_index, bbox, confidence = candidate_rows[int(kept_index)]
             detections.append(
                 {
                     "bbox": bbox,

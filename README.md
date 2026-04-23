@@ -101,10 +101,10 @@ Open `http://127.0.0.1:8000`.
 
 The current default detector backend is `onnxruntime`, configured through `configs/app_settings.yaml`.
 
-- default ONNX path: `models/detector/best.onnx`
-- Ultralytics fallback weights path: `models/detector/best.pt`
+- default ONNX path: `models/detector/yolo26nbest.onnx`
+- Ultralytics fallback weights path: `models/detector/yolo26nbest.pt`
 
-If you switch `detector.backend` back to `ultralytics`, make sure `models/detector/best.pt` exists.
+If you switch `detector.backend` back to `ultralytics`, make sure `models/detector/yolo26nbest.pt` exists.
 
 ## Main Runtime Outputs
 
@@ -115,13 +115,22 @@ If you switch `detector.backend` back to `ultralytics`, make sure `models/detect
 - annotated frames: `outputs/annotated_frames`
 - plate crops: `outputs/plate_crops`
 
+## Automated Checks
+
+Run these checks before shipping changes:
+
+```bash
+python -m compileall src scripts
+python -m unittest discover -s tests -p "test_*.py"
+```
+
 ## Recommended Next Priorities
 
-1. Add automated tests for session rules, storage behavior, and API routes.
-2. Tighten schema-first API response handling.
+1. Expand automated coverage for long-running camera loops, video-upload paths, and end-to-end role-based flows.
+2. Tighten schema-first API response handling for routes that still return ad hoc payload shapes.
 3. Add database migration or versioning support.
-4. Continue detector and OCR quality improvements for difficult plate cases.
-5. Harden the app for real two-camera operation and operator workflows.
+4. Improve moderation and operator-facing runbooks for real deployments.
+5. Continue detector and OCR quality improvements for difficult plate cases.
 
 ## Notes
 

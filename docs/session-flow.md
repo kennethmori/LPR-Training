@@ -18,12 +18,24 @@ The current codebase can:
 - detect a plate from an image or live camera frame
 - read plate text with OCR
 - stabilize plate text across recent frames
+- run separate `entry` and `exit` camera roles
+- create and close persistent vehicle sessions in SQLite
+- match stable exit detections to the latest open session for the same plate
+- record unmatched exit events for operator review
 
-The current codebase does not yet:
+Remaining gaps are mostly around test coverage, API contract strictness, and operational hardening.
 
-- run separate entry and exit cameras
-- create a persistent vehicle session
-- match exit detections back to an earlier entry record
+## Current Runtime Mapping
+
+The refactored codebase now maps the session flow to concrete modules:
+
+- `src/core/pipeline.py` produces normalized recognition payloads.
+- `src/services/tracking_service.py` manages live camera track selection and selective OCR.
+- `src/runtime.py` enriches camera payloads with vehicle lookup and session decisions.
+- `src/services/session_service.py` applies duplicate, ambiguity, and open/close rules.
+- `src/storage/event_repository.py` and `src/storage/session_repository.py` persist the durable event and session records.
+
+That means entry and exit lifecycle logic remains above recognition and below the API, which is the intended boundary.
 
 ## Recommended Architecture
 
@@ -51,7 +63,7 @@ The output of this layer should be a stable recognition event such as:
 
 ### 2. Session Layer
 
-This layer should be added next.
+This layer is already implemented and should remain separate from recognition logic.
 
 Responsibilities:
 
@@ -121,9 +133,9 @@ Recommended rules:
 
 ## Suggested Storage
 
-A durable session store is recommended even for the prototype.
+A durable session store is already in use.
 
-Best first step:
+Current store:
 
 - SQLite
 
@@ -144,11 +156,17 @@ Why:
 
 ## Implementation Direction
 
-When this feature is built, the repo will likely need:
+Current implementation includes:
 
-- a session service in `src/services/`
-- a persistence layer for session records
-- support for two camera instances or camera roles
-- new API routes for active sessions, completed sessions, and entry or exit events
+- a session service in `src/services/session_service.py`
+- a SQLite persistence layer in `src/services/storage_service.py`
+- role-aware cameras managed through `entry` and `exit` services
+- API routes for active sessions, history, events, unmatched exits, and moderation
+
+Recommended next improvements:
+
+- expand tests for session and storage edge cases
+- tighten schema-first API response enforcement
+- add migration/versioning support for long-lived SQLite deployments
 
 Recognition should remain focused on reading plates. Session logic should sit above it rather than inside the OCR pipeline itself.

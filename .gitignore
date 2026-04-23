@@ -7,9 +7,17 @@ venv/
 env/
 .env
 .pytest_cache/
+.tmp/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+.playwright-cli/
+.ultralytics/
+analysis_logs/
+seed_profile_review/
+IMAGES/
+test_script.py
+verify_app.py
 
 # Local datasets and other heavy/generated project artifacts
 data/**
@@ -31,10 +39,10 @@ outputs/**
 
 # Model weights and exports
 models/detector/*.pt
-!models/detector/best.pt
+!models/detector/yolo26nbest.pt
 models/exports/**
 *.onnx
-!models/detector/best.onnx
+!models/detector/yolo26nbest.onnx
 *.engine
 *.torchscript
 

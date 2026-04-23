@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
 from pathlib import Path
 
 from src.services.performance_service import PerformanceService
+from tests.helpers import create_test_workspace, remove_test_workspace
 
 
 class PerformanceServiceTests(unittest.TestCase):
     def test_append_and_read_recent_include_log_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = PerformanceService(log_path=Path(temp_dir) / "performance.jsonl")
+        temp_dir = create_test_workspace(self._testMethodName)
+        try:
+            service = PerformanceService(log_path=temp_dir / "performance.jsonl")
             service.append(
                 {
                     "timestamp": "2026-01-01T00:00:00+00:00",
@@ -26,11 +27,14 @@ class PerformanceServiceTests(unittest.TestCase):
             self.assertEqual(entries[0]["source"], "unit_test")
             self.assertIn("log_id", entries[0])
             self.assertIn("log_source", entries[0])
+        finally:
+            remove_test_workspace(temp_dir)
 
     def test_min_interval_throttles_non_forced_append(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = create_test_workspace(self._testMethodName)
+        try:
             service = PerformanceService(
-                log_path=Path(temp_dir) / "performance.jsonl",
+                log_path=temp_dir / "performance.jsonl",
                 min_interval_seconds=60.0,
             )
             wrote_first = service.append({"source": "first"}, force=False)
@@ -41,6 +45,8 @@ class PerformanceServiceTests(unittest.TestCase):
             entries = service.read_recent(limit=5)
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]["source"], "first")
+        finally:
+            remove_test_workspace(temp_dir)
 
     def test_summarize_aggregates_camera_and_pipeline_metrics(self) -> None:
         service = PerformanceService(log_path=Path("dummy") / "performance.jsonl")

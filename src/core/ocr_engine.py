@@ -1,11 +1,34 @@
 from __future__ import annotations
 
+import logging
+import os
+import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+OCR_INIT_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+)
+OCR_INFERENCE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    cv2.error,
+)
 
 
 class PlateOCREngine:
@@ -17,9 +40,18 @@ class PlateOCREngine:
         self.cache_enabled = bool(self.settings.get("cache_enabled", False))
         self.cache_size = max(int(self.settings.get("cache_size", 128) or 128), 1)
         self.result_cache: OrderedDict[tuple[str, bytes], dict[str, Any]] = OrderedDict()
+        self._lock = threading.RLock()
+        self._last_error_log_at: dict[str, float] = {}
         self._load()
 
     def _load(self) -> None:
+        with self._lock:
+            self._load_unlocked()
+
+    def _load_unlocked(self) -> None:
+        self.engine = None
+        self.mode = "unavailable"
+        self.ready = False
         preferred = str(self.settings.get("preferred_engine", "paddleocr")).lower()
         if preferred == "paddleocr" and self._load_paddleocr():
             return
@@ -28,15 +60,37 @@ class PlateOCREngine:
         self.mode = "ocr_dependencies_missing"
         self.ready = False
 
+    def reload(self, *, cpu_threads: int | None = None) -> None:
+        with self._lock:
+            if cpu_threads is not None:
+                self.settings["cpu_threads"] = max(int(cpu_threads), 1)
+            self.result_cache.clear()
+            self._load_unlocked()
+
+    def _log_throttled_exception(self, key: str, message: str) -> None:
+        interval_seconds = max(float(self.settings.get("error_log_interval_seconds", 5.0) or 5.0), 0.0)
+        now = time.monotonic()
+        last_logged_at = self._last_error_log_at.get(key)
+        if last_logged_at is not None and interval_seconds > 0 and (now - last_logged_at) < interval_seconds:
+            return
+        self._last_error_log_at[key] = now
+        logger.exception(message)
+
     def _load_paddleocr(self) -> bool:
         try:
             from paddleocr import PaddleOCR, TextRecognition
-        except Exception:
+        except (ImportError, OSError):
+            self._log_throttled_exception(
+                "paddleocr_import",
+                "Failed to import PaddleOCR dependencies.",
+            )
             return False
 
         model_name = str(self.settings.get("paddle_rec_model_name", "en_PP-OCRv5_mobile_rec"))
         model_dir = self.settings.get("paddle_rec_model_dir")
-        cpu_threads = int(self.settings.get("cpu_threads", 8))
+        max_threads = max(int(os.cpu_count() or 1), 1)
+        configured_threads = max(int(self.settings.get("cpu_threads", 8) or 1), 1)
+        cpu_threads = min(configured_threads, max_threads)
         model_dir_value = None
         if model_dir:
             candidate_dir = Path(model_dir)
@@ -55,7 +109,11 @@ class PlateOCREngine:
             self.mode = f"paddleocr:{model_name}"
             self.ready = True
             return True
-        except Exception:
+        except OCR_INIT_EXCEPTIONS:
+            self._log_throttled_exception(
+                "paddleocr_textrecognition_init",
+                "TextRecognition initialization failed; attempting PaddleOCR pipeline fallback.",
+            )
             try:
                 pipeline_kwargs: dict[str, Any] = {
                     "use_doc_orientation_classify": False,
@@ -71,7 +129,8 @@ class PlateOCREngine:
                 self.mode = f"paddleocr:{model_name}"
                 self.ready = True
                 return True
-            except Exception:
+            except OCR_INIT_EXCEPTIONS:
+                logger.exception("Failed to initialize PaddleOCR engine for model '%s'.", model_name)
                 self.engine = None
                 return False
 
@@ -82,7 +141,11 @@ class PlateOCREngine:
 
         try:
             import easyocr
-        except Exception:
+        except (ImportError, OSError):
+            self._log_throttled_exception(
+                "easyocr_import",
+                "Failed to import EasyOCR dependencies.",
+            )
             return False
 
         try:
@@ -100,38 +163,40 @@ class PlateOCREngine:
             self.mode = "easyocr"
             self.ready = True
             return True
-        except Exception:
+        except OCR_INIT_EXCEPTIONS:
+            logger.exception("Failed to initialize EasyOCR reader.")
             self.engine = None
             return False
 
     def read(self, image: np.ndarray) -> dict[str, Any]:
-        if not self.ready or self.engine is None:
-            return {
+        with self._lock:
+            if not self.ready or self.engine is None:
+                return {
+                    "raw_text": "",
+                    "confidence": 0.0,
+                    "engine": self.mode,
+                }
+
+            cache_key = self._build_cache_key(image)
+            cached_result = self._get_cached_result(cache_key)
+            if cached_result is not None:
+                return cached_result
+
+            if self.mode.startswith("paddleocr"):
+                result = self._read_with_paddleocr(image)
+                self._store_cached_result(cache_key, result)
+                return result
+            if self.mode == "easyocr":
+                result = self._read_with_easyocr(image)
+                self._store_cached_result(cache_key, result)
+                return result
+            result = {
                 "raw_text": "",
                 "confidence": 0.0,
                 "engine": self.mode,
             }
-
-        cache_key = self._build_cache_key(image)
-        cached_result = self._get_cached_result(cache_key)
-        if cached_result is not None:
-            return cached_result
-
-        if self.mode.startswith("paddleocr"):
-            result = self._read_with_paddleocr(image)
             self._store_cached_result(cache_key, result)
             return result
-        if self.mode == "easyocr":
-            result = self._read_with_easyocr(image)
-            self._store_cached_result(cache_key, result)
-            return result
-        result = {
-            "raw_text": "",
-            "confidence": 0.0,
-            "engine": self.mode,
-        }
-        self._store_cached_result(cache_key, result)
-        return result
 
     def _build_cache_key(self, image: np.ndarray | None) -> tuple[str, bytes] | None:
         if not self.cache_enabled or image is None or getattr(image, "size", 0) == 0:
@@ -180,7 +245,8 @@ class PlateOCREngine:
             else:
                 result = self.engine.ocr(image, cls=False)
                 texts, scores = self._parse_paddle_legacy_output(result)
-        except Exception:
+        except OCR_INFERENCE_EXCEPTIONS:
+            self._log_throttled_exception("paddleocr_read", "PaddleOCR inference failed.")
             return {"raw_text": "", "confidence": 0.0, "engine": self.mode}
 
         raw_text = "".join(texts).strip()
@@ -199,7 +265,11 @@ class PlateOCREngine:
                 if hasattr(item, "to_dict"):
                     try:
                         payload = item.to_dict()
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError, RuntimeError):
+                        self._log_throttled_exception(
+                            "paddleocr_result_to_dict",
+                            "PaddleOCR result to_dict conversion failed; using raw payload.",
+                        )
                         payload = payload
                 if isinstance(item, dict):
                     payload = item
@@ -235,7 +305,8 @@ class PlateOCREngine:
     def _read_with_easyocr(self, image: np.ndarray) -> dict[str, Any]:
         try:
             result = self.engine.readtext(image, detail=1)
-        except Exception:
+        except OCR_INFERENCE_EXCEPTIONS:
+            self._log_throttled_exception("easyocr_read", "EasyOCR inference failed.")
             return {"raw_text": "", "confidence": 0.0, "engine": self.mode}
 
         texts = [str(item[1]) for item in result if len(item) >= 3]

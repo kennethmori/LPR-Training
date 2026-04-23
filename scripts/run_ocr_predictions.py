@@ -17,7 +17,6 @@ from src.core.cropper import resize_for_ocr
 from src.core.ocr_engine import PlateOCREngine
 from src.core.postprocess import PlateTextPostProcessor
 
-
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 

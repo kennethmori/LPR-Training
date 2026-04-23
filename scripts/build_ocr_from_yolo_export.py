@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -87,7 +86,7 @@ def build_ocr_dataset(dataset_root: Path, output_root: Path, manifest_path: Path
 
                 try:
                     image = Image.open(image_path).convert("RGB")
-                except Exception:
+                except OSError:
                     continue
 
                 image_width, image_height = image.size

@@ -32,6 +32,57 @@ class StableResultPayload(BaseModel):
     accepted: bool = False
 
 
+class VehicleDocumentPayload(BaseModel):
+    document_id: int
+    document_type: str = ""
+    document_reference: str = ""
+    file_ref: str | None = None
+    verification_status: str = "pending"
+    verified_at: str | None = None
+    expires_at: str | None = None
+    notes: str = ""
+
+
+class VehicleGateHistoryPayload(BaseModel):
+    id: int
+    timestamp: str | None = None
+    camera_role: str = ""
+    event_action: str = ""
+    note: str = ""
+    ocr_confidence: float = 0.0
+    detector_confidence: float = 0.0
+
+
+class VehicleProfilePayload(BaseModel):
+    vehicle_id: int
+    plate_number: str = ""
+    owner_name: str = ""
+    user_category: str = ""
+    owner_affiliation: str = ""
+    owner_reference: str = ""
+    vehicle_type: str = ""
+    vehicle_brand: str = ""
+    vehicle_model: str = ""
+    vehicle_color: str = ""
+    registration_status: str = "pending"
+    approval_date: str | None = None
+    expiry_date: str | None = None
+    status_notes: str = ""
+    record_source: str = ""
+
+
+class VehicleLookupPayload(BaseModel):
+    matched: bool = False
+    lookup_outcome: str = "visitor_unregistered"
+    plate_number: str = ""
+    registration_status: str = "unknown"
+    manual_verification_required: bool = True
+    status_message: str = ""
+    profile: VehicleProfilePayload | None = None
+    documents: list[VehicleDocumentPayload] = Field(default_factory=list)
+    recent_history: list[VehicleGateHistoryPayload] = Field(default_factory=list)
+
+
 class PipelinePayload(BaseModel):
     source_type: str
     camera_role: str = "upload"
@@ -49,6 +100,7 @@ class PipelinePayload(BaseModel):
     crop_image_base64: str | None = None
     recognition_event: dict[str, Any] | None = None
     session_result: dict[str, Any] | None = None
+    vehicle_lookup: VehicleLookupPayload | None = None
     timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
@@ -74,6 +126,7 @@ class AppStatusPayload(BaseModel):
     app_title: str
     detector_ready: bool
     detector_mode: str
+    detector_execution_providers: list[str] = Field(default_factory=list)
     ocr_ready: bool
     ocr_mode: str
     camera_running: bool
@@ -105,6 +158,12 @@ class RecognitionSettingsPayload(BaseModel):
     min_detector_confidence: float = 0.5
     min_ocr_confidence: float = 0.9
     min_stable_occurrences: int = 3
+    detector_confidence_threshold: float = 0.3
+    detector_iou_threshold: float = 0.5
+    detector_max_detections: int = 5
+    min_detector_confidence_for_ocr: float = 0.55
+    min_sharpness_for_ocr: float = 45.0
+    ocr_cooldown_seconds: float = 0.75
     ocr_cpu_threads: int = 8
     updated_at: str | None = None
     message: str = ""
@@ -114,12 +173,24 @@ class RecognitionSettingsUpdatePayload(BaseModel):
     min_detector_confidence: float = 0.5
     min_ocr_confidence: float = 0.9
     min_stable_occurrences: int = 3
+    detector_confidence_threshold: float = 0.3
+    detector_iou_threshold: float = 0.5
+    detector_max_detections: int = 5
+    min_detector_confidence_for_ocr: float = 0.55
+    min_sharpness_for_ocr: float = 45.0
+    ocr_cooldown_seconds: float = 0.75
     ocr_cpu_threads: int = 8
 
 
 class DetectorRuntimeSettingsPayload(BaseModel):
     backend: str = "ultralytics"
-    onnx_weights_path: str = "models/detector/best.onnx"
+    detector_weights_path: str = "models/detector/yolo26nbest.pt"
+    onnx_weights_path: str = "models/detector/yolo26nbest.onnx"
+    onnx_provider_mode: str = "prefer_directml"
+    onnx_execution_providers: list[str] = Field(default_factory=list)
+    active_onnx_execution_providers: list[str] = Field(default_factory=list)
+    available_pt_models: list[str] = Field(default_factory=list)
+    available_onnx_models: list[str] = Field(default_factory=list)
     detector_ready: bool = False
     detector_mode: str = "unavailable"
     updated_at: str | None = None
@@ -128,8 +199,9 @@ class DetectorRuntimeSettingsPayload(BaseModel):
 
 class DetectorRuntimeSettingsUpdatePayload(BaseModel):
     backend: str = "ultralytics"
-    onnx_weights_path: str = "models/detector/best.onnx"
-    ocr_cpu_threads: int = 8
+    detector_weights_path: str = "models/detector/yolo26nbest.pt"
+    onnx_weights_path: str = "models/detector/yolo26nbest.onnx"
+    onnx_provider_mode: str = "prefer_directml"
 
 
 class EventRecord(BaseModel):
@@ -173,6 +245,8 @@ class VehicleSessionPayload(BaseModel):
     exit_confidence: float = 0.0
     entry_crop_path: str | None = None
     exit_crop_path: str | None = None
+    matched_vehicle_id: int | None = None
+    matched_registration_status: str = ""
     notes: str = ""
     created_at: str
     updated_at: str
@@ -197,6 +271,9 @@ class RecognitionEventPayload(BaseModel):
     event_action: str = "logged_only"
     created_session_id: int | None = None
     closed_session_id: int | None = None
+    matched_vehicle_id: int | None = None
+    matched_registration_status: str = ""
+    manual_verification_required: int = 0
     note: str = ""
 
 

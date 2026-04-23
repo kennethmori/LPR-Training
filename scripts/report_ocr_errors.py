@@ -5,9 +5,7 @@ from collections import Counter
 from pathlib import Path
 
 import pandas as pd
-
 from evaluate_ocr import levenshtein_distance
-
 
 CONFUSION_PAIRS = [
     ("0", "O"),

@@ -1,0 +1,57 @@
+{% macro render_app_header(app_title, university, subtitle, note, active_page, auth_enabled=False, status_badge_id="", status_badge_text="") -%}
+<header
+    class="header"
+    aria-label="{% if active_page == 'login' %}Admin Login Header{% elif active_page == 'settings' %}Settings Header{% else %}Dashboard Header{% endif %}"
+>
+    <div class="header-brand">
+        <img
+            class="brand-seal"
+            src="/static/img/usm-seal.png"
+            alt="University of Southern Mindanao seal"
+            width="62"
+            height="62"
+        >
+        <div class="header-info">
+            <p class="header-eyebrow">{{ university }}</p>
+            <h1>{{ app_title }}</h1>
+            <p class="header-subtitle">{{ subtitle }}</p>
+        </div>
+    </div>
+    <div class="header-meta">
+        <p class="header-note">{{ note }}</p>
+        <nav class="header-actions" aria-label="Primary">
+            {% if active_page == "login" %}
+            <a href="/" class="header-settings-btn badge">Dashboard</a>
+            <span class="badge is-active" aria-current="page">Admin Login</span>
+            {% else %}
+            {% if active_page != "dashboard" %}
+            <a
+                href="/"
+                class="header-settings-btn badge{% if active_page == 'dashboard' %} is-active{% endif %}"
+                {% if active_page == "dashboard" %}aria-current="page"{% endif %}
+            >
+                Dashboard
+            </a>
+            {% endif %}
+            <a
+                href="/settings"
+                class="header-settings-btn badge{% if active_page == 'settings' %} is-active{% endif %}"
+                {% if active_page == "settings" %}aria-current="page"{% endif %}
+            >
+                Settings
+            </a>
+            {% if auth_enabled %}
+            <form method="post" action="/logout">
+                <button type="submit" class="header-settings-btn badge" aria-label="Log out admin session">
+                    Log Out
+                </button>
+            </form>
+            {% endif %}
+            {% if status_badge_text %}
+            <span class="badge" {% if status_badge_id %}id="{{ status_badge_id }}"{% endif %}>{{ status_badge_text }}</span>
+            {% endif %}
+            {% endif %}
+        </nav>
+    </div>
+</header>
+{%- endmacro %}

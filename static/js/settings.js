@@ -1,163 +1,32 @@
-(() => {
-    const $ = (id) => document.getElementById(id);
+"use strict";
 
-    const els = {
-        entryCameraUrl: $("entryCameraUrl"),
-        exitCameraUrl: $("exitCameraUrl"),
-        saveCameraSettingsBtn: $("saveCameraSettingsBtn"),
-        cameraSettingsUpdatedAt: $("cameraSettingsUpdatedAt"),
-        cameraSettingsNote: $("cameraSettingsNote"),
-        settingsEntrySource: $("settingsEntrySource"),
-        settingsExitSource: $("settingsExitSource"),
-        fallbackCameraSource: $("fallbackCameraSource"),
-        settingsStateBadge: $("settingsStateBadge"),
-        minDetectorConfidence: $("minDetectorConfidence"),
-        minOcrConfidence: $("minOcrConfidence"),
-        minStableOccurrences: $("minStableOccurrences"),
-        ocrCpuThreads: $("ocrCpuThreads"),
-        saveRecognitionSettingsBtn: $("saveRecognitionSettingsBtn"),
-        recognitionSettingsUpdatedAt: $("recognitionSettingsUpdatedAt"),
-        recognitionSettingsNote: $("recognitionSettingsNote"),
-        settingsDetectorThreshold: $("settingsDetectorThreshold"),
-        settingsOcrThreshold: $("settingsOcrThreshold"),
-        settingsStableOccurrences: $("settingsStableOccurrences"),
-        settingsOcrCpuThreads: $("settingsOcrCpuThreads"),
-        detectorBackend: $("detectorBackend"),
-        detectorOnnxPath: $("detectorOnnxPath"),
-        saveDetectorRuntimeBtn: $("saveDetectorRuntimeBtn"),
-        detectorRuntimeUpdatedAt: $("detectorRuntimeUpdatedAt"),
-        detectorRuntimeNote: $("detectorRuntimeNote"),
-        settingsDetectorBackend: $("settingsDetectorBackend"),
-        settingsDetectorOnnxPath: $("settingsDetectorOnnxPath"),
-        settingsDetectorMode: $("settingsDetectorMode"),
-        settingsDetectorReady: $("settingsDetectorReady"),
-    };
+import { createSettingsApi } from "./settings/api.js";
+import { createSettingsStore } from "./settings/store.js";
+import {
+    buildUnifiedModelOptions,
+    collectSettingsElements,
+    formatThreshold,
+    isOnnxModelPath,
+    normalizeTextValue,
+    renderCameraSettingsSummary,
+    renderDetectorRuntimeSummary,
+    renderRecognitionSettingsSummary,
+    requestJson,
+    setButtonBusy,
+    updateSelectOptions,
+} from "./settings_support.js";
 
-    function normalizeTextValue(value) {
-        if (value == null) return "";
-        const normalized = String(value).trim();
-        if (!normalized) return "";
+    const els = collectSettingsElements();
+    const settingsStore = createSettingsStore();
+    const state = settingsStore.state;
+    const settingsApi = createSettingsApi(requestJson);
 
-        const lowered = normalized.toLowerCase();
-        if (lowered === "none" || lowered === "null" || lowered === "undefined" || lowered === "nan") {
-            return "";
-        }
-        return normalized;
-    }
-
-    function summarizeSourceValue(value) {
-        const normalized = normalizeTextValue(value);
-        return normalized || "Not set";
-    }
-
-    function formatTime(isoValue) {
-        if (!isoValue) return "-";
-        const date = new Date(isoValue);
-        if (Number.isNaN(date.getTime())) return "-";
-        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    }
-
-    function formatThreshold(value, digits = 2) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) return "-";
-        return numeric.toFixed(digits);
-    }
-
-    function setNamedBadge(el, text, cls) {
-        if (!el) return;
-        el.className = "badge";
-        if (cls) {
-            el.classList.add(cls);
-        }
-        el.textContent = text;
-    }
-
-    function renderCameraSettingsSummary(payload, options = {}) {
-        const { badgeText = "Loaded", badgeClass = "open" } = options;
-
-        const entrySource = summarizeSourceValue(payload && payload.entry_source);
-        const exitSource = summarizeSourceValue(payload && payload.exit_source);
-        const fallbackSource = summarizeSourceValue(payload && payload.fallback_source);
-        const updatedAt = payload && payload.updated_at ? formatTime(payload.updated_at) : "-";
-
-        if (els.settingsEntrySource) {
-            els.settingsEntrySource.textContent = entrySource;
-        }
-        if (els.settingsExitSource) {
-            els.settingsExitSource.textContent = exitSource;
-        }
-        if (els.fallbackCameraSource) {
-            els.fallbackCameraSource.textContent = fallbackSource;
-        }
-        if (els.cameraSettingsUpdatedAt) {
-            els.cameraSettingsUpdatedAt.textContent = "Last updated: " + updatedAt;
-        }
-
-        setNamedBadge(els.settingsStateBadge, badgeText, badgeClass);
-    }
-
-    function renderRecognitionSettingsSummary(payload, options = {}) {
-        const { badgeText = "Loaded", badgeClass = "open" } = options;
-        const detectorThreshold = payload ? formatThreshold(payload.min_detector_confidence) : "-";
-        const ocrThreshold = payload ? formatThreshold(payload.min_ocr_confidence) : "-";
-        const stableOccurrences = payload ? String(payload.min_stable_occurrences ?? "-") : "-";
-        const ocrCpuThreads = payload ? String(payload.ocr_cpu_threads ?? "-") : "-";
-        const updatedAt = payload && payload.updated_at ? formatTime(payload.updated_at) : "-";
-
-        if (els.settingsDetectorThreshold) {
-            els.settingsDetectorThreshold.textContent = detectorThreshold;
-        }
-        if (els.settingsOcrThreshold) {
-            els.settingsOcrThreshold.textContent = ocrThreshold;
-        }
-        if (els.settingsStableOccurrences) {
-            els.settingsStableOccurrences.textContent = stableOccurrences;
-        }
-        if (els.settingsOcrCpuThreads) {
-            els.settingsOcrCpuThreads.textContent = ocrCpuThreads;
-        }
-        if (els.recognitionSettingsUpdatedAt) {
-            els.recognitionSettingsUpdatedAt.textContent = "Last updated: " + updatedAt;
-        }
-
-        setNamedBadge(els.settingsStateBadge, badgeText, badgeClass);
-    }
-
-    function renderDetectorRuntimeSummary(payload, options = {}) {
-        const { badgeText = "Loaded", badgeClass = "open" } = options;
-        const backend = payload ? normalizeTextValue(payload.backend) || "ultralytics" : "-";
-        const onnxPath = payload ? summarizeSourceValue(payload.onnx_weights_path) : "-";
-        const detectorMode = payload ? normalizeTextValue(payload.detector_mode) || "-" : "-";
-        const detectorReady = payload ? (payload.detector_ready ? "Ready" : "Not ready") : "-";
-        const updatedAt = payload && payload.updated_at ? formatTime(payload.updated_at) : "-";
-
-        if (els.settingsDetectorBackend) {
-            els.settingsDetectorBackend.textContent = backend;
-        }
-        if (els.settingsDetectorOnnxPath) {
-            els.settingsDetectorOnnxPath.textContent = onnxPath;
-        }
-        if (els.settingsDetectorMode) {
-            els.settingsDetectorMode.textContent = detectorMode;
-        }
-        if (els.settingsDetectorReady) {
-            els.settingsDetectorReady.textContent = detectorReady;
-        }
-        if (els.detectorRuntimeUpdatedAt) {
-            els.detectorRuntimeUpdatedAt.textContent = "Last updated: " + updatedAt;
-        }
-
-        setNamedBadge(els.settingsStateBadge, badgeText, badgeClass);
-    }
+    const detectorRuntimeState = state.detectorRuntimeState;
 
     async function refreshCameraSettings() {
         try {
-            const response = await fetch("/settings/cameras");
-            if (!response.ok) {
-                throw new Error("Camera settings endpoint unavailable.");
-            }
-
-            const payload = await response.json();
+            const payload = await settingsApi.fetchCameraSettings();
+            settingsStore.patch({ cameraSettings: payload });
             if (els.entryCameraUrl) {
                 els.entryCameraUrl.value = payload.entry_source || "";
             }
@@ -165,14 +34,14 @@
                 els.exitCameraUrl.value = payload.exit_source || "";
             }
 
-            renderCameraSettingsSummary(payload, { badgeText: "Loaded", badgeClass: "open" });
+            renderCameraSettingsSummary(els, payload, { badgeText: "Loaded", badgeClass: "open" });
             if (els.cameraSettingsNote) {
                 els.cameraSettingsNote.textContent = payload.updated_at
                     ? "Saved settings loaded."
                     : "Configure camera URLs and save.";
             }
         } catch (error) {
-            renderCameraSettingsSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderCameraSettingsSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.cameraSettingsNote) {
                 els.cameraSettingsNote.textContent = error && error.message
                     ? error.message
@@ -183,12 +52,8 @@
 
     async function refreshRecognitionSettings() {
         try {
-            const response = await fetch("/settings/recognition");
-            if (!response.ok) {
-                throw new Error("Recognition settings endpoint unavailable.");
-            }
-
-            const payload = await response.json();
+            const payload = await settingsApi.fetchRecognitionSettings();
+            settingsStore.patch({ recognitionSettings: payload });
             if (els.minDetectorConfidence) {
                 els.minDetectorConfidence.value = formatThreshold(payload.min_detector_confidence);
             }
@@ -198,18 +63,36 @@
             if (els.minStableOccurrences) {
                 els.minStableOccurrences.value = String(payload.min_stable_occurrences ?? 3);
             }
+            if (els.detectorConfidenceThreshold) {
+                els.detectorConfidenceThreshold.value = formatThreshold(payload.detector_confidence_threshold);
+            }
+            if (els.detectorIouThreshold) {
+                els.detectorIouThreshold.value = formatThreshold(payload.detector_iou_threshold);
+            }
+            if (els.detectorMaxDetections) {
+                els.detectorMaxDetections.value = String(payload.detector_max_detections ?? 5);
+            }
+            if (els.minDetectorConfidenceForOcr) {
+                els.minDetectorConfidenceForOcr.value = formatThreshold(payload.min_detector_confidence_for_ocr);
+            }
+            if (els.minSharpnessForOcr) {
+                els.minSharpnessForOcr.value = formatThreshold(payload.min_sharpness_for_ocr, 1);
+            }
+            if (els.ocrCooldownSeconds) {
+                els.ocrCooldownSeconds.value = formatThreshold(payload.ocr_cooldown_seconds, 2);
+            }
             if (els.ocrCpuThreads) {
                 els.ocrCpuThreads.value = String(payload.ocr_cpu_threads ?? 8);
             }
 
-            renderRecognitionSettingsSummary(payload, { badgeText: "Loaded", badgeClass: "open" });
+            renderRecognitionSettingsSummary(els, payload, { badgeText: "Loaded", badgeClass: "open" });
             if (els.recognitionSettingsNote) {
                 els.recognitionSettingsNote.textContent = payload.updated_at
-                    ? "Recognition settings loaded."
-                    : "Configure acceptance rules and save.";
+                    ? "Recognition thresholds loaded."
+                    : "Configure live thresholds and acceptance rules, then save.";
             }
         } catch (error) {
-            renderRecognitionSettingsSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderRecognitionSettingsSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.recognitionSettingsNote) {
                 els.recognitionSettingsNote.textContent = error && error.message
                     ? error.message
@@ -220,25 +103,37 @@
 
     async function refreshDetectorRuntimeSettings() {
         try {
-            const response = await fetch("/settings/detector-runtime");
-            if (!response.ok) {
-                throw new Error("Detector runtime settings endpoint unavailable.");
+            const payload = await settingsApi.fetchDetectorRuntimeSettings();
+            settingsStore.patch({ detectorRuntimeSettings: payload });
+
+            detectorRuntimeState.backend = normalizeTextValue(payload.backend) || "ultralytics";
+            detectorRuntimeState.detectorWeightsPath = normalizeTextValue(payload.detector_weights_path)
+                || "models/detector/yolo26nbest.pt";
+            detectorRuntimeState.onnxWeightsPath = normalizeTextValue(payload.onnx_weights_path)
+                || "models/detector/yolo26nbest.onnx";
+            detectorRuntimeState.onnxProviderMode = normalizeTextValue(payload.onnx_provider_mode)
+                || "prefer_directml";
+
+            const selectedModelPath = detectorRuntimeState.backend === "onnxruntime"
+                ? detectorRuntimeState.onnxWeightsPath
+                : detectorRuntimeState.detectorWeightsPath;
+
+            updateSelectOptions(
+                els.detectorModelPath,
+                buildUnifiedModelOptions(payload),
+                selectedModelPath,
+                selectedModelPath || "models/detector/yolo26nbest.pt",
+            );
+            if (els.onnxProviderMode) {
+                els.onnxProviderMode.value = detectorRuntimeState.onnxProviderMode;
             }
 
-            const payload = await response.json();
-            if (els.detectorBackend) {
-                els.detectorBackend.value = payload.backend || "ultralytics";
-            }
-            if (els.detectorOnnxPath) {
-                els.detectorOnnxPath.value = payload.onnx_weights_path || "outputs/detector/best.onnx";
-            }
-
-            renderDetectorRuntimeSummary(payload, { badgeText: "Loaded", badgeClass: "open" });
+            renderDetectorRuntimeSummary(els, payload, { badgeText: "Loaded", badgeClass: "open" });
             if (els.detectorRuntimeNote) {
                 els.detectorRuntimeNote.textContent = payload.message || "Detector runtime settings loaded.";
             }
         } catch (error) {
-            renderDetectorRuntimeSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderDetectorRuntimeSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.detectorRuntimeNote) {
                 els.detectorRuntimeNote.textContent = error && error.message
                     ? error.message
@@ -251,45 +146,28 @@
         const entrySource = els.entryCameraUrl ? String(els.entryCameraUrl.value || "").trim() : "";
         const exitSource = els.exitCameraUrl ? String(els.exitCameraUrl.value || "").trim() : "";
 
-        if (els.saveCameraSettingsBtn) {
-            els.saveCameraSettingsBtn.disabled = true;
-        }
+        setButtonBusy(els.saveCameraSettingsBtn, true);
 
         try {
-            const response = await fetch("/settings/cameras", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    entry_source: entrySource,
-                    exit_source: exitSource,
-                }),
+            const payload = await settingsApi.saveCameraSettings({
+                entry_source: entrySource,
+                exit_source: exitSource,
             });
+            settingsStore.patch({ cameraSettings: payload });
 
-            const payload = await response.json().catch(() => null);
-            if (!response.ok || !payload) {
-                const message = payload && (payload.message || payload.detail)
-                    ? (payload.message || payload.detail)
-                    : "Unable to save camera settings.";
-                throw new Error(message);
-            }
-
-            renderCameraSettingsSummary(payload, { badgeText: "Saved", badgeClass: "live" });
+            renderCameraSettingsSummary(els, payload, { badgeText: "Saved", badgeClass: "live" });
             if (els.cameraSettingsNote) {
                 els.cameraSettingsNote.textContent = payload.message || "Camera settings saved.";
             }
         } catch (error) {
-            renderCameraSettingsSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderCameraSettingsSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.cameraSettingsNote) {
                 els.cameraSettingsNote.textContent = error && error.message
                     ? error.message
                     : "Unable to save camera settings.";
             }
         } finally {
-            if (els.saveCameraSettingsBtn) {
-                els.saveCameraSettingsBtn.disabled = false;
-            }
+            setButtonBusy(els.saveCameraSettingsBtn, false);
         }
     }
 
@@ -297,97 +175,107 @@
         const minDetectorConfidence = els.minDetectorConfidence ? Number(els.minDetectorConfidence.value || 0) : 0;
         const minOcrConfidence = els.minOcrConfidence ? Number(els.minOcrConfidence.value || 0) : 0;
         const minStableOccurrences = els.minStableOccurrences ? Number(els.minStableOccurrences.value || 1) : 1;
+        const detectorConfidenceThreshold = els.detectorConfidenceThreshold
+            ? Number(els.detectorConfidenceThreshold.value || 0)
+            : 0;
+        const detectorIouThreshold = els.detectorIouThreshold
+            ? Number(els.detectorIouThreshold.value || 0)
+            : 0;
+        const detectorMaxDetections = els.detectorMaxDetections
+            ? Number(els.detectorMaxDetections.value || 1)
+            : 1;
+        const minDetectorConfidenceForOcr = els.minDetectorConfidenceForOcr
+            ? Number(els.minDetectorConfidenceForOcr.value || 0)
+            : 0;
+        const minSharpnessForOcr = els.minSharpnessForOcr
+            ? Number(els.minSharpnessForOcr.value || 0)
+            : 0;
+        const ocrCooldownSeconds = els.ocrCooldownSeconds
+            ? Number(els.ocrCooldownSeconds.value || 0)
+            : 0;
         const ocrCpuThreads = els.ocrCpuThreads ? Number(els.ocrCpuThreads.value || 1) : 1;
 
-        if (els.saveRecognitionSettingsBtn) {
-            els.saveRecognitionSettingsBtn.disabled = true;
-        }
+        setButtonBusy(els.saveRecognitionSettingsBtn, true);
 
         try {
-            const response = await fetch("/settings/recognition", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    min_detector_confidence: minDetectorConfidence,
-                    min_ocr_confidence: minOcrConfidence,
-                    min_stable_occurrences: minStableOccurrences,
-                    ocr_cpu_threads: ocrCpuThreads,
-                }),
+            const payload = await settingsApi.saveRecognitionSettings({
+                min_detector_confidence: minDetectorConfidence,
+                min_ocr_confidence: minOcrConfidence,
+                min_stable_occurrences: minStableOccurrences,
+                detector_confidence_threshold: detectorConfidenceThreshold,
+                detector_iou_threshold: detectorIouThreshold,
+                detector_max_detections: detectorMaxDetections,
+                min_detector_confidence_for_ocr: minDetectorConfidenceForOcr,
+                min_sharpness_for_ocr: minSharpnessForOcr,
+                ocr_cooldown_seconds: ocrCooldownSeconds,
+                ocr_cpu_threads: ocrCpuThreads,
             });
+            settingsStore.patch({ recognitionSettings: payload });
 
-            const payload = await response.json().catch(() => null);
-            if (!response.ok || !payload) {
-                const message = payload && (payload.message || payload.detail)
-                    ? (payload.message || payload.detail)
-                    : "Unable to save recognition settings.";
-                throw new Error(message);
-            }
-
-            renderRecognitionSettingsSummary(payload, { badgeText: "Saved", badgeClass: "live" });
+            renderRecognitionSettingsSummary(els, payload, { badgeText: "Saved", badgeClass: "live" });
             if (els.recognitionSettingsNote) {
                 els.recognitionSettingsNote.textContent = payload.message || "Recognition settings saved.";
             }
         } catch (error) {
-            renderRecognitionSettingsSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderRecognitionSettingsSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.recognitionSettingsNote) {
                 els.recognitionSettingsNote.textContent = error && error.message
                     ? error.message
                     : "Unable to save recognition settings.";
             }
         } finally {
-            if (els.saveRecognitionSettingsBtn) {
-                els.saveRecognitionSettingsBtn.disabled = false;
-            }
+            setButtonBusy(els.saveRecognitionSettingsBtn, false);
         }
     }
 
     async function saveDetectorRuntimeSettings() {
-        const backend = els.detectorBackend ? String(els.detectorBackend.value || "ultralytics").trim() : "ultralytics";
-        const onnxWeightsPath = els.detectorOnnxPath
-            ? String(els.detectorOnnxPath.value || "outputs/detector/best.onnx").trim()
-            : "outputs/detector/best.onnx";
+        const selectedModelPath = els.detectorModelPath
+            ? String(els.detectorModelPath.value || "").trim()
+            : "";
+        const useOnnxRuntime = isOnnxModelPath(selectedModelPath);
+        const backend = useOnnxRuntime ? "onnxruntime" : "ultralytics";
+        const detectorWeightsPath = useOnnxRuntime
+            ? normalizeTextValue(detectorRuntimeState.detectorWeightsPath) || "models/detector/yolo26nbest.pt"
+            : (selectedModelPath || "models/detector/yolo26nbest.pt");
+        const onnxWeightsPath = useOnnxRuntime
+            ? (selectedModelPath || "models/detector/yolo26nbest.onnx")
+            : (normalizeTextValue(detectorRuntimeState.onnxWeightsPath) || "models/detector/yolo26nbest.onnx");
+        const onnxProviderMode = els.onnxProviderMode
+            ? normalizeTextValue(els.onnxProviderMode.value) || detectorRuntimeState.onnxProviderMode
+            : detectorRuntimeState.onnxProviderMode;
 
-        if (els.saveDetectorRuntimeBtn) {
-            els.saveDetectorRuntimeBtn.disabled = true;
-        }
+        setButtonBusy(els.saveDetectorRuntimeBtn, true);
 
         try {
-            const response = await fetch("/settings/detector-runtime", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    backend: backend,
-                    onnx_weights_path: onnxWeightsPath,
-                }),
+            const payload = await settingsApi.saveDetectorRuntimeSettings({
+                backend: backend,
+                detector_weights_path: detectorWeightsPath,
+                onnx_weights_path: onnxWeightsPath,
+                onnx_provider_mode: onnxProviderMode,
             });
+            settingsStore.patch({ detectorRuntimeSettings: payload });
 
-            const payload = await response.json().catch(() => null);
-            if (!response.ok || !payload) {
-                const message = payload && (payload.message || payload.detail)
-                    ? (payload.message || payload.detail)
-                    : "Unable to save detector runtime settings.";
-                throw new Error(message);
-            }
+            detectorRuntimeState.backend = normalizeTextValue(payload.backend) || backend;
+            detectorRuntimeState.detectorWeightsPath = normalizeTextValue(payload.detector_weights_path)
+                || detectorWeightsPath;
+            detectorRuntimeState.onnxWeightsPath = normalizeTextValue(payload.onnx_weights_path)
+                || onnxWeightsPath;
+            detectorRuntimeState.onnxProviderMode = normalizeTextValue(payload.onnx_provider_mode)
+                || onnxProviderMode;
 
-            renderDetectorRuntimeSummary(payload, { badgeText: "Saved", badgeClass: "live" });
+            renderDetectorRuntimeSummary(els, payload, { badgeText: "Saved", badgeClass: "live" });
             if (els.detectorRuntimeNote) {
                 els.detectorRuntimeNote.textContent = payload.message || "Detector runtime settings saved.";
             }
         } catch (error) {
-            renderDetectorRuntimeSummary(null, { badgeText: "Error", badgeClass: "error" });
+            renderDetectorRuntimeSummary(els, null, { badgeText: "Error", badgeClass: "error" });
             if (els.detectorRuntimeNote) {
                 els.detectorRuntimeNote.textContent = error && error.message
                     ? error.message
                     : "Unable to save detector runtime settings.";
             }
         } finally {
-            if (els.saveDetectorRuntimeBtn) {
-                els.saveDetectorRuntimeBtn.disabled = false;
-            }
+            setButtonBusy(els.saveDetectorRuntimeBtn, false);
         }
     }
 
@@ -404,4 +292,3 @@
     refreshCameraSettings();
     refreshRecognitionSettings();
     refreshDetectorRuntimeSettings();
-})();

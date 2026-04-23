@@ -5,7 +5,6 @@ import csv
 import shutil
 from pathlib import Path
 
-
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 

@@ -42,8 +42,8 @@ Key rules currently enforced by the app:
 
 The largest missing pieces are now around hardening rather than first-time implementation:
 
-1. Automated tests for `SessionService`, `StorageService`, and API routes
-2. Stricter schema-first API response handling
+1. Expanded automated coverage for long-running camera loops, video uploads, and end-to-end entry/exit scenarios
+2. Stricter schema-first API response handling for remaining ad hoc route payloads
 3. Database lifecycle support such as migrations or versioning
 4. Better moderation and deployment workflows for real operator use
 5. Continued detector and OCR quality improvements for hard cases
@@ -51,7 +51,7 @@ The largest missing pieces are now around hardening rather than first-time imple
 
 ## Suggested Next Build Order
 
-1. Add automated tests for session, storage, and API behavior.
+1. Expand test coverage for camera runtime edge cases, upload flows, and entry/exit lifecycle regressions.
 2. Tighten response modeling so returned payloads consistently align with schemas.
 3. Add database migration or versioning support.
 4. Improve moderation, review, and operational runbooks.
@@ -70,4 +70,4 @@ The project still keeps model training, data preparation, and runtime behavior a
 
 ## Main Idea In One Line
 
-This project is now a local-first license plate recognition system with entry and exit session tracking, and the next work is mostly about testing, hardening, and accuracy improvements.
+This project is now a local-first license plate recognition system with entry and exit session tracking, and the next work is mostly about expanding coverage, hardening operations, and improving accuracy.

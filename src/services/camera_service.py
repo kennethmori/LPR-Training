@@ -1,14 +1,38 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import deque
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 import cv2
 
-from src.core.cropper import annotate_detection
+from src.services.camera_support import (
+    annotate_tracked_frame,
+    attach_camera_images,
+    compute_fps,
+    encode_preview_frame,
+    mark_frame,
+    mark_processed,
+    placeholder_frame,
+    resolve_camera_source,
+    should_emit_payload,
+    tracking_active,
+    update_tracked_detection,
+)
+
+logger = logging.getLogger(__name__)
+
+
+CAMERA_RUNTIME_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    cv2.error,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+)
 
 
 class CameraService:
@@ -53,7 +77,7 @@ class CameraService:
             self.last_start_error = None
             return True
 
-        source = self._resolve_source()
+        source = resolve_camera_source(self.settings)
         if source is None:
             self.last_start_error = "camera_source_missing"
             return False
@@ -90,114 +114,77 @@ class CameraService:
     def _loop(self) -> None:
         frame_index = 0
         sleep_seconds = float(self.settings.get("fps_sleep_seconds", 0.03))
+        max_consecutive_read_failures = max(int(self.settings.get("max_consecutive_read_failures", 120) or 120), 1)
+        max_consecutive_runtime_errors = max(int(self.settings.get("max_consecutive_runtime_errors", 30) or 30), 1)
+        consecutive_read_failures = 0
+        consecutive_runtime_errors = 0
         try:
             while not self.stop_event.is_set() and self.capture is not None:
                 try:
+                    if not self.capture.isOpened():
+                        self.last_start_error = "camera_stream_disconnected"
+                        logger.error("Camera stream disconnected for role '%s'.", self.camera_role)
+                        break
+
                     ok, frame = self.capture.read()
                     if not ok:
+                        consecutive_read_failures += 1
                         with self.stats_lock:
                             self.read_failures += 1
+                        if consecutive_read_failures >= max_consecutive_read_failures:
+                            self.last_start_error = f"camera_stream_unavailable:{consecutive_read_failures}"
+                            logger.error(
+                                "Camera stream unavailable for role '%s' after %s consecutive read failures.",
+                                self.camera_role,
+                                consecutive_read_failures,
+                            )
+                            break
                         time.sleep(sleep_seconds)
                         continue
+
+                    consecutive_read_failures = 0
 
                     self._mark_frame(frame)
 
                     if self.tracking_enabled and self.tracker_service is not None:
-                        payload, annotated_frame, crop_image = self.tracker_service.process_frame(
-                            frame=frame,
-                            frame_index=frame_index,
-                        )
-                        include_camera_annotated = bool(self.settings.get("include_camera_annotated_base64", False))
-                        include_camera_crop = bool(self.settings.get("include_camera_crop_base64", True))
-                        payload["annotated_image_base64"] = (
-                            self.pipeline.encode_image_base64(annotated_frame)
-                            if include_camera_annotated
-                            else None
-                        )
-                        payload["crop_image_base64"] = (
-                            self.pipeline.encode_image_base64(crop_image)
-                            if include_camera_crop and crop_image is not None
-                            else None
-                        )
-                        self.latest_payload = payload
-                        if payload.get("plate_detected"):
-                            self.latest_detected_payload = dict(payload)
-                        self._mark_processed()
-                        self.processed_payload_count += 1
-                        emit_every_n = max(int(self.settings.get("payload_emit_every_n_processed_frames", 1) or 1), 1)
-                        should_emit_payload = (
-                            (self.processed_payload_count % emit_every_n) == 0
-                            or bool(payload.get("recognition_event"))
-                            or bool((payload.get("stable_result") or {}).get("accepted"))
-                        )
-                        if self.on_payload is not None and should_emit_payload:
-                            self.on_payload(payload)
+                        payload, annotated_frame = self._process_tracking_frame(frame, frame_index)
                     elif self.frames_until_process <= 0:
-                        payload, annotated_frame, crop_image = self.pipeline.process_frame(
-                            frame,
-                            source_type="camera",
-                            camera_role=self.camera_role,
-                            source_name=self.source_name,
-                        )
-                        include_camera_annotated = bool(self.settings.get("include_camera_annotated_base64", False))
-                        include_camera_crop = bool(self.settings.get("include_camera_crop_base64", True))
-                        payload["annotated_image_base64"] = (
-                            self.pipeline.encode_image_base64(annotated_frame)
-                            if include_camera_annotated
-                            else None
-                        )
-                        payload["crop_image_base64"] = (
-                            self.pipeline.encode_image_base64(crop_image)
-                            if include_camera_crop and crop_image is not None
-                            else None
-                        )
-                        self.latest_payload = payload
-                        if payload.get("plate_detected"):
-                            self.latest_detected_payload = dict(payload)
-                        self._mark_processed()
-                        self._update_tracked_detection(payload, frame_index)
-                        self.frames_until_process = max(self._next_process_interval(frame_index) - 1, 0)
-                        self.processed_payload_count += 1
-                        emit_every_n = max(int(self.settings.get("payload_emit_every_n_processed_frames", 1) or 1), 1)
-                        should_emit_payload = (
-                            (self.processed_payload_count % emit_every_n) == 0
-                            or bool(payload.get("recognition_event"))
-                            or bool((payload.get("stable_result") or {}).get("accepted"))
-                        )
-                        if self.on_payload is not None and should_emit_payload:
-                            self.on_payload(payload)
+                        payload, annotated_frame = self._process_pipeline_frame(frame, frame_index)
                     else:
                         annotated_frame = self._annotate_tracked_frame(frame, frame_index)
                         self.frames_until_process -= 1
 
-                    self.latest_frame_bytes = self._encode_preview_frame(annotated_frame)
+                    self.latest_frame_bytes = encode_preview_frame(annotated_frame, self.settings)
+                    consecutive_runtime_errors = 0
 
                     frame_index += 1
                     time.sleep(sleep_seconds)
-                except Exception as exc:
-                    self.last_start_error = f"camera_runtime_failed:{exc.__class__.__name__}"
-                    break
+                except CAMERA_RUNTIME_EXCEPTIONS as exc:
+                    consecutive_runtime_errors += 1
+                    self.last_start_error = f"camera_runtime_recovered:{exc.__class__.__name__}"
+                    logger.exception(
+                        "Camera loop recovered from runtime error for role '%s' (streak=%s).",
+                        self.camera_role,
+                        consecutive_runtime_errors,
+                    )
+                    if consecutive_runtime_errors >= max_consecutive_runtime_errors:
+                        self.last_start_error = f"camera_runtime_failed:{exc.__class__.__name__}"
+                        logger.error(
+                            "Camera loop stopping for role '%s' after %s consecutive runtime errors.",
+                            self.camera_role,
+                            consecutive_runtime_errors,
+                        )
+                        break
+                    time.sleep(sleep_seconds)
+                    continue
         finally:
             self.running = False
             if self.capture is not None:
                 try:
                     self.capture.release()
-                except Exception:
+                except (cv2.error, RuntimeError, AttributeError, OSError):
                     pass
                 self.capture = None
-
-    def _resolve_source(self) -> int | str | None:
-        source = self.settings.get("source", self.settings.get("source_index", 0))
-        if source is None:
-            return None
-        if isinstance(source, int):
-            return source
-        source_value = str(source).strip()
-        if not source_value or source_value.lower() == "none":
-            return None
-        if source_value.isdigit():
-            return int(source_value)
-        return source_value
 
     def _reset_stats(self) -> None:
         with self.stats_lock:
@@ -217,39 +204,23 @@ class CameraService:
             self.tracker_service.reset()
 
     def preferred_payload(self) -> dict[str, Any] | None:
-        if self.latest_payload and self.latest_payload.get("plate_detected"):
-            return self.latest_payload
-        if self.latest_detected_payload is not None:
-            return self.latest_detected_payload
         return self.latest_payload
 
     def _mark_frame(self, frame: Any) -> None:
-        now_monotonic = time.perf_counter()
-        now_iso = datetime.now(timezone.utc).isoformat()
-        with self.stats_lock:
-            self.frame_timestamps.append(now_monotonic)
-            try:
-                height, width = frame.shape[:2]
-                self.latest_frame_shape = (int(width), int(height))
-            except Exception:
-                self.latest_frame_shape = None
-            self.last_frame_at_iso = now_iso
+        mark_frame(
+            frame=frame,
+            stats_lock=self.stats_lock,
+            frame_timestamps=self.frame_timestamps,
+            set_latest_frame_shape=lambda value: setattr(self, "latest_frame_shape", value),
+            set_last_frame_at=lambda value: setattr(self, "last_frame_at_iso", value),
+        )
 
     def _mark_processed(self) -> None:
-        now_monotonic = time.perf_counter()
-        now_iso = datetime.now(timezone.utc).isoformat()
-        with self.stats_lock:
-            self.processed_timestamps.append(now_monotonic)
-            self.last_processed_at_iso = now_iso
-
-    @staticmethod
-    def _compute_fps(samples: deque[float]) -> float:
-        if len(samples) < 2:
-            return 0.0
-        elapsed = samples[-1] - samples[0]
-        if elapsed <= 0:
-            return 0.0
-        return round((len(samples) - 1) / elapsed, 2)
+        mark_processed(
+            stats_lock=self.stats_lock,
+            processed_timestamps=self.processed_timestamps,
+            set_last_processed_at=lambda value: setattr(self, "last_processed_at_iso", value),
+        )
 
     def snapshot(self) -> dict[str, Any]:
         with self.stats_lock:
@@ -264,8 +235,8 @@ class CameraService:
                 "source_name": self.source_name,
                 "source_value": self.settings.get("source", self.settings.get("source_index", 0)),
                 "running": self.running,
-                "input_fps": self._compute_fps(self.frame_timestamps),
-                "processed_fps": self._compute_fps(self.processed_timestamps),
+                "input_fps": compute_fps(self.frame_timestamps),
+                "processed_fps": compute_fps(self.processed_timestamps),
                 "read_failures": int(self.read_failures),
                 "frame_width": width,
                 "frame_height": height,
@@ -293,7 +264,7 @@ class CameraService:
         while True:
             frame = self.latest_frame_bytes
             if frame is None:
-                placeholder = self._placeholder_frame()
+                placeholder = placeholder_frame()
                 success, encoded = cv2.imencode(".jpg", placeholder)
                 frame = encoded.tobytes() if success else b""
 
@@ -302,14 +273,6 @@ class CameraService:
                 b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
             )
             time.sleep(stream_frame_interval_seconds)
-
-    def _placeholder_frame(self):
-        import numpy as np
-
-        image = np.zeros((360, 640, 3), dtype=np.uint8)
-        cv2.putText(image, "Camera idle", (220, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        cv2.putText(image, datetime.now(timezone.utc).isoformat(), (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
-        return image
 
     def _next_process_interval(self, frame_index: int) -> int:
         if self._tracking_active(frame_index):
@@ -326,78 +289,82 @@ class CameraService:
         )
 
     def _tracking_active(self, frame_index: int) -> bool:
-        tracked = self.tracked_detection
-        if not tracked:
-            return False
-        persistence_frames = max(int(self.settings.get("tracking_persistence_frames", 12) or 12), 0)
-        last_frame_index = int(tracked.get("last_frame_index", -1))
-        if persistence_frames <= 0 or (frame_index - last_frame_index) > persistence_frames:
-            self.tracked_detection = None
-            return False
-        return True
+        active, tracked = tracking_active(
+            self.tracked_detection,
+            frame_index=frame_index,
+            persistence_frames=max(int(self.settings.get("tracking_persistence_frames", 12) or 12), 0),
+        )
+        self.tracked_detection = tracked
+        return active
 
     def _update_tracked_detection(self, payload: dict[str, Any], frame_index: int) -> None:
-        if not payload.get("plate_detected"):
-            return
-
-        detection = payload.get("detection") or {}
-        stable = payload.get("stable_result") or {}
-        ocr = payload.get("ocr") or {}
-        bbox = detection.get("bbox")
-        if not isinstance(bbox, dict):
-            return
-
-        overlay_text = str(stable.get("value") or ocr.get("cleaned_text") or ocr.get("raw_text") or "")
-        self.tracked_detection = {
-            "bbox": {
-                "x1": int(bbox["x1"]),
-                "y1": int(bbox["y1"]),
-                "x2": int(bbox["x2"]),
-                "y2": int(bbox["y2"]),
-            },
-            "label": str(detection.get("label", "plate_number")),
-            "confidence": float(detection.get("confidence", 0.0) or 0.0),
-            "text": overlay_text,
-            "last_frame_index": frame_index,
-        }
+        tracked = update_tracked_detection(payload, frame_index)
+        if tracked is not None:
+            self.tracked_detection = tracked
 
     def _annotate_tracked_frame(self, frame: Any, frame_index: int):
-        if not bool(self.settings.get("enable_tracking_overlay", True)):
-            return frame
-        if not self._tracking_active(frame_index):
-            return frame
-        tracked = self.tracked_detection
-        if not tracked:
-            return frame
-        return annotate_detection(
-            image=frame,
-            bbox=tracked["bbox"],
-            label=tracked["label"],
-            score=float(tracked["confidence"]),
-            text=str(tracked.get("text", "")),
+        annotated, tracked = annotate_tracked_frame(
+            frame,
+            settings=self.settings,
+            tracked_detection=self.tracked_detection,
+            frame_index=frame_index,
         )
+        self.tracked_detection = tracked
+        return annotated
 
-    def _encode_preview_frame(self, frame: Any) -> bytes | None:
-        if frame is None:
-            return None
+    def _process_tracking_frame(self, frame: Any, frame_index: int) -> tuple[dict[str, Any], Any]:
+        payload, annotated_frame, crop_image = self.tracker_service.process_frame(
+            frame=frame,
+            frame_index=frame_index,
+        )
+        attach_camera_images(
+            pipeline=self.pipeline,
+            settings=self.settings,
+            payload=payload,
+            annotated_frame=annotated_frame,
+            crop_image=crop_image,
+        )
+        self.latest_payload = payload
+        if payload.get("plate_detected"):
+            self.latest_detected_payload = dict(payload)
+        self._update_tracked_detection(payload, frame_index)
+        if not payload.get("plate_detected"):
+            annotated_frame = self._annotate_tracked_frame(frame, frame_index)
+        self._mark_processed()
+        self.processed_payload_count += 1
+        if self.on_payload is not None and should_emit_payload(
+            self.settings,
+            payload=payload,
+            processed_payload_count=self.processed_payload_count,
+        ):
+            self.on_payload(payload)
+        return payload, annotated_frame
 
-        preview = frame
-        max_width = max(int(self.settings.get("preview_max_width", 960) or 960), 1)
-        max_height = max(int(self.settings.get("preview_max_height", 540) or 540), 1)
-
-        try:
-            height, width = preview.shape[:2]
-        except Exception:
-            height, width = 0, 0
-
-        if width > 0 and height > 0:
-            scale = min(max_width / width, max_height / height, 1.0)
-            if scale < 1.0:
-                target_size = (max(int(width * scale), 1), max(int(height * scale), 1))
-                preview = cv2.resize(preview, target_size, interpolation=cv2.INTER_AREA)
-
-        quality = max(min(int(self.settings.get("preview_jpeg_quality", 80) or 80), 100), 30)
-        success, encoded = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
-        if not success:
-            return None
-        return encoded.tobytes()
+    def _process_pipeline_frame(self, frame: Any, frame_index: int) -> tuple[dict[str, Any], Any]:
+        payload, annotated_frame, crop_image = self.pipeline.process_frame(
+            frame,
+            source_type="camera",
+            camera_role=self.camera_role,
+            source_name=self.source_name,
+        )
+        attach_camera_images(
+            pipeline=self.pipeline,
+            settings=self.settings,
+            payload=payload,
+            annotated_frame=annotated_frame,
+            crop_image=crop_image,
+        )
+        self.latest_payload = payload
+        if payload.get("plate_detected"):
+            self.latest_detected_payload = dict(payload)
+        self._mark_processed()
+        self._update_tracked_detection(payload, frame_index)
+        self.frames_until_process = max(self._next_process_interval(frame_index) - 1, 0)
+        self.processed_payload_count += 1
+        if self.on_payload is not None and should_emit_payload(
+            self.settings,
+            payload=payload,
+            processed_payload_count=self.processed_payload_count,
+        ):
+            self.on_payload(payload)
+        return payload, annotated_frame

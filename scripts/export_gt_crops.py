@@ -5,7 +5,7 @@ from pathlib import Path
 
 try:
     import cv2
-except Exception:  # pragma: no cover - optional dependency fallback
+except (ImportError, OSError):  # pragma: no cover - optional dependency fallback
     cv2 = None
 
 from PIL import Image
@@ -36,7 +36,7 @@ def export_crops(images_dir: Path, labels_dir: Path, output_dir: Path, padding_r
         else:
             try:
                 image = Image.open(image_path).convert("RGB")
-            except Exception:
+            except OSError:
                 continue
             image_width, image_height = image.size
 

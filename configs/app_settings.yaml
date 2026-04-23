@@ -5,8 +5,14 @@ app:
   debug: true
   default_camera_role: entry
   dashboard_refresh_seconds: 0.25
+auth:
+  enabled: true
+  admin_username: admin
+  admin_password: admin123
+  session_secret: plate-basic-admin-session-secret
+  session_max_age_seconds: 43200
 paths:
-  detector_weights: models/detector/best.pt
+  detector_weights: models/detector/yolo26nbest.pt
   database_path: outputs/app_data/plate_events.db
   video_upload_dir: outputs/app_data/video_uploads
   annotated_output_dir: outputs/annotated_frames
@@ -15,15 +21,18 @@ paths:
   performance_log_path: outputs/demo_logs/performance.jsonl
 detector:
   backend: onnxruntime
-  confidence_threshold: 0.3
-  iou_threshold: 0.5
+  confidence_threshold: 0.6
+  iou_threshold: 0.4
   padding_ratio: 0.05
-  max_detections: 5
+  max_detections: 1
   input_size: 640
   device: cpu
-  onnx_weights_path: models/detector/best.onnx
+  onnx_weights_path: models/detector/yolo26nbest.onnx
   onnx_execution_providers:
+  - DmlExecutionProvider
   - CPUExecutionProvider
+  onnx_intra_op_threads: 5
+  onnx_inter_op_threads: 1
 ocr:
   preferred_engine: paddleocr
   fallback_engine: easyocr
@@ -39,10 +48,17 @@ ocr:
   preprocess_equalize_hist: true
   preprocess_blur_kernel: 3
   preprocess_adaptive_threshold: false
+  rectify_plate_enabled: true
+  rectify_min_area_ratio: 0.08
+  rectify_min_aspect_ratio: 1.8
+  rectify_max_aspect_ratio: 8.0
+  rectify_min_side_px: 24
   reuse_when_bbox_stable: true
   reuse_bbox_iou_threshold: 0.9
   reuse_center_distance_ratio: 0.08
   reuse_max_age_seconds: 0.75
+  reuse_allow_scale_fallback: true
+  reuse_max_scale_ratio: 2.5
   paddle_rec_model_name: en_PP-OCRv5_mobile_rec
   paddle_rec_model_dir: outputs/paddleocr/en_PP-OCRv5_mobile_rec
   easyocr_model_dir: outputs/easyocr_model
@@ -57,7 +73,7 @@ postprocess:
   require_letter_digit_mix: true
 stabilization:
   history_size: 5
-  min_repetitions: 3
+  min_repetitions: 2
   process_every_n_frames: 1
   idle_process_every_n_frames: 1
   active_process_every_n_frames: 1
@@ -66,18 +82,20 @@ stabilization:
 tracking:
   enabled: true
   detector_every_n_frames: 1
-  max_tracks: 4
-  max_missed_frames: 12
-  max_detector_gap_frames: 15
+  max_tracks: 1
+  max_missed_frames: 6
+  max_detector_gap_frames: 8
   match_iou_threshold: 0.3
   match_center_distance_ratio: 0.6
   min_plate_width: 96
   min_plate_height: 24
-  min_detector_confidence_for_ocr: 0.55
-  min_sharpness_for_ocr: 45.0
-  ocr_cooldown_frames: 2
-  ocr_cooldown_seconds: 0.15
+  min_detector_confidence_for_ocr: 0.7
+  min_sharpness_for_ocr: 55.0
+  ocr_cooldown_frames: 1
+  ocr_cooldown_seconds: 0.0
   stop_ocr_after_stable: true
+  stop_ocr_after_stable_occurrences: 2
+  recognition_event_min_stable_occurrences: 2
   tracker_backend: auto
 stream:
   preview_max_width: 800
@@ -87,11 +105,14 @@ stream:
   payload_emit_every_n_processed_frames: 1
   include_camera_annotated_base64: false
   include_camera_crop_base64: true
-  include_sse_crop_base64: false
+  include_sse_crop_base64: true
   log_no_detection_frames: false
 performance:
   min_record_interval_seconds: 1.0
   max_recent_entries: 5000
+vehicle_registry:
+  enabled: true
+  recent_history_limit: 5
 artifacts:
   save_event_images: true
   save_camera_event_images: true
@@ -135,25 +156,25 @@ session:
   store_unmatched_exit_events: true
   min_detector_confidence: 0.5
   min_ocr_confidence: 0.8
-  min_stable_occurrences: 3
+  min_stable_occurrences: 2
   ambiguity_window_seconds: 30
   ambiguity_char_distance: 1
 camera:
   source: http://192.168.0.251:4747/video
   source_name: phone_camera
-  width: 960
-  height: 540
+  width: 1280
+  height: 720
   fps_sleep_seconds: 0.01
 cameras:
   entry:
     source: http://192.168.0.251:4747/video
     source_name: entry_phone
-    width: 960
-    height: 540
+    width: 1280
+    height: 720
     fps_sleep_seconds: 0.01
   exit:
     source: null
     source_name: exit_phone
-    width: 960
-    height: 540
+    width: 1280
+    height: 720
     fps_sleep_seconds: 0.01

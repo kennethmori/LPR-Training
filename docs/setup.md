@@ -10,6 +10,12 @@ Install dependencies with:
 pip install -r requirements-local.txt
 ```
 
+For Windows laptops that should try the iGPU through ONNX Runtime DirectML, use the DirectML-specific environment instead:
+
+```bash
+pip install -r requirements-local-directml.txt
+```
+
 Optional runtime dependencies depend on which detector and OCR backends you want to use:
 
 - detector runtime, default path: `onnxruntime`
@@ -25,11 +31,14 @@ The current config defaults to an ONNX detector runtime.
 Current default detector settings in `configs/app_settings.yaml`:
 
 - `detector.backend: onnxruntime`
-- `detector.onnx_weights_path: models/detector/best.onnx`
+- `detector.onnx_weights_path: models/detector/yolo26nbest.onnx`
+- `detector.onnx_execution_providers: [DmlExecutionProvider, CPUExecutionProvider]`
+
+That provider order lets a Windows DirectML install try the AMD/Intel/NVIDIA GPU first while still falling back to CPU when DirectML is unavailable or cannot create the session.
 
 Ultralytics weights are still supported when you switch the backend:
 
-- `paths.detector_weights: models/detector/best.pt`
+- `paths.detector_weights: models/detector/yolo26nbest.pt`
 
 If the detector does not load, verify that the configured backend matches the model file you actually have.
 
@@ -53,6 +62,15 @@ Open:
 http://127.0.0.1:8000
 ```
 
+## Automated Validation
+
+Run these commands before or after manual sanity checks:
+
+```bash
+python -m compileall src scripts
+python -m unittest discover -s tests -p "test_*.py"
+```
+
 ## Runtime Outputs
 
 Important runtime paths:
@@ -73,6 +91,7 @@ The app exposes a status route at `GET /status`.
 This is useful for checking whether:
 
 - detector weights and backend are ready
+- the active ONNX execution provider list includes `DmlExecutionProvider`
 - OCR dependencies are available
 - SQLite storage initialized successfully
 - the session layer is ready

@@ -1,0 +1,11 @@
+{% from "_macros.html" import render_app_header %}
+{{ render_app_header(
+    app_title,
+    university,
+    subtitle,
+    "Local operator dashboard",
+    "dashboard",
+    auth_enabled=auth_enabled,
+    status_badge_id="statusBadge",
+    status_badge_text="IDLE"
+) }}

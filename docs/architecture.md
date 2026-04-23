@@ -74,6 +74,27 @@ flowchart LR
 
 The system accepts frames from real camera sources, turns those frames into stable recognition events, applies session rules, stores events and sessions in SQLite, and exposes the resulting state through FastAPI and a simple dashboard.
 
+## Current Module Layout
+
+The implementation now follows these practical boundaries inside `src/`:
+
+- `src/app.py` is the FastAPI entry point only.
+- `src/bootstrap.py` loads YAML config and builds core services.
+- `src/runtime.py` assembles camera runtime objects and installs app state.
+- `src/api/routes.py` is an orchestrator that registers smaller route modules.
+- `src/api/*_routes.py` split the API by concern: pages, settings, prediction, cameras, dashboard, sessions, vehicles, performance, and moderation.
+- `src/core/` holds pure-ish recognition concerns such as detector, OCR, post-processing, pipeline payloads, and artifact handling.
+- `src/domain/models.py` defines shared typed event, session, and registry models.
+- `src/services/` contains runtime coordination logic such as cameras, tracking, sessions, registry lookup, and logging.
+- `src/storage/` contains SQLite connection management, schema creation, repositories, and bootstrap seeding.
+
+This keeps the runtime dependency direction clear:
+
+1. `app.py` and `runtime.py` compose objects.
+2. API modules call services.
+3. Services use domain models and repositories.
+4. Repositories talk to SQLite.
+
 ## Deployment Topology
 
 The expected deployment is a single local machine or campus workstation running the web app and connecting to one or two cameras.
@@ -133,14 +154,11 @@ Accepted source types:
 - phone IP camera URL
 - RTSP stream URL
 
-Current repo module:
-
-- `src/services/camera_service.py`
-
-Target modules:
+Current repo modules:
 
 - `src/services/camera_service.py`: one worker for one source
-- future `src/services/camera_manager.py`: owns multiple camera workers keyed by role
+- `src/services/camera_manager.py`: owns multiple camera workers keyed by role
+- `src/services/tracking_service.py`: per-role tracking and OCR cadence control
 
 This layer should:
 
@@ -273,17 +291,18 @@ This layer should not:
 
 The final repo should be organized around these responsibilities.
 
-### `src/app.py`
+### `src/app.py` and `src/bootstrap.py`
 
-Composition root.
+Composition root plus wiring helpers.
 
 Responsibilities:
 
-- load YAML settings
-- create and wire core services
-- initialize output paths and database path
-- register API routes
-- store shared objects on `app.state`
+- load YAML settings and auth config
+- build detector, OCR, pipeline, storage, registry, and session services
+- initialize output paths, runtime directories, and database path
+- create role-aware camera and tracking services
+- register middleware and API routes
+- store shared objects on `app.state` and close resources on shutdown
 
 ### `src/core/`
 
@@ -301,8 +320,11 @@ Runtime and business services.
 
 - `camera_service.py`: capture worker for one source
 - `camera_manager.py`: role-aware manager for multiple sources
+- `tracking_service.py`: tracker-backed OCR cadence and per-track stabilization decisions
 - `result_service.py`: stabilization only
 - `logging_service.py`: JSONL debug logging
+- `performance_service.py`: runtime snapshot and summary metrics
+- `vehicle_registry_service.py`: optional vehicle metadata lookups
 - `session_service.py`: session rules and orchestration
 - `storage_service.py`: SQLite data access and moderation operations
 
@@ -310,7 +332,11 @@ Runtime and business services.
 
 HTTP boundary.
 
+- `auth.py`: admin auth middleware and cookie helpers
 - `routes.py`: endpoints and template rendering
+- `settings_support.py`: runtime settings and detector backend apply helpers
+- `dashboard_support.py`: status snapshots, payload cache, and camera helper functions
+- `upload_support.py`: upload validation and video-processing helpers
 - `schemas.py`: request and response models
 
 ### `templates/` and `static/`
@@ -323,18 +349,17 @@ This project does not need React for the current scope. Jinja2 plus vanilla Java
 
 The current `src/app.py` already acts as the composition root. It currently builds these objects in roughly this order:
 
-1. settings
-2. output paths
+1. settings and auth config
+2. output paths and runtime directories
 3. detector
 4. OCR engine
 5. post-processor
 6. result stabilizer
-7. logging service
-8. storage service or SQLite connection
-9. session service
-10. one camera service per configured role
-11. optional camera manager
-12. API router
+7. logging and performance services
+8. storage, vehicle-registry, and session services
+9. tracking plus one camera service per configured role
+10. camera manager and default role camera
+11. API router
 
 ### Current `app.state`
 
@@ -343,13 +368,21 @@ The current app stores:
 - `settings`
 - `base_dir`
 - `config_path`
+- `server_time_factory`
+- `auth_enabled`
+- `auth_cookie_name`
+- `auth_session_max_age`
+- `auth_issue_cookie_value`
+- `auth_is_valid_cookie`
 - `detector`
+- `detector_factory`
 - `ocr_engine`
 - `result_service`
 - `logging_service`
 - `performance_service`
 - `pipeline`
 - `storage_service`
+- `vehicle_registry_service`
 - `session_service`
 - `video_upload_dir`
 - `camera_manager`
@@ -579,13 +612,13 @@ The final architecture keeps the current endpoints and adds the operational ones
 
 ### Response modeling
 
-The repo already has `src/api/schemas.py`, but most routes still return plain dictionaries.
+The repo already has `src/api/schemas.py`, and most API data routes now declare response models.
 
 The final system should:
 
 - keep Pydantic schemas as the API contract
-- align route outputs with those schemas
-- add new schemas for sessions, event lists, and camera-role endpoints
+- continue aligning remaining utility routes with those schemas where practical
+- keep template and streaming routes explicit about their non-JSON response shape
 
 ## Configuration Model
 
@@ -594,12 +627,22 @@ YAML is the only source of truth for runtime configuration.
 The current `configs/app_settings.yaml` already covers:
 
 - `app`
+- `auth`
 - `paths`
 - `detector`
 - `ocr`
 - `postprocess`
 - `stabilization`
+- `tracking`
+- `stream`
+- `performance`
+- `vehicle_registry`
+- `artifacts`
+- `uploads`
+- `video_upload`
+- `session`
 - `camera`
+- `cameras`
 
 The final architecture should evolve that into:
 
@@ -611,7 +654,7 @@ app:
   debug: true
 
 paths:
-  detector_weights: models/detector/best.pt
+  detector_weights: models/detector/yolo26nbest.pt
   database_path: outputs/app_data/plate_events.db
   event_log_path: outputs/demo_logs/events.jsonl
   annotated_output_dir: outputs/annotated_frames
@@ -701,7 +744,7 @@ The app should remain honest about what is available.
 
 ### Detector readiness
 
-- if `models/detector/best.pt` is missing while the backend is `ultralytics`, detector mode should report `missing_weights`
+- if `models/detector/yolo26nbest.pt` is missing while the backend is `ultralytics`, detector mode should report `missing_weights`
 - the app should still start and serve the dashboard
 
 ### OCR readiness
@@ -732,8 +775,8 @@ The current repo already has:
 
 The final system still needs these implementation pieces:
 
-- automated tests for service, storage, and API layers
-- stronger schema-first API response typing
+- broader integration and end-to-end automated coverage
+- stronger schema-first API response typing on remaining ad hoc routes
 - migration/versioning strategy for database evolution
 
 ## Security And Data Handling

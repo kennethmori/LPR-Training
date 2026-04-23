@@ -15,6 +15,12 @@ This is a local-first two-stage license plate recognition app:
 
 The current app already includes session tracking, role-aware cameras, video upload inference, and a FastAPI dashboard.
 
+Vehicle registration and profile-linking context now also exists.
+
+Before extending that area, read:
+
+- `docs/vehicle-registration-feature.md`
+
 ## Current Scope To Preserve
 
 - keep one detector class: `plate_number`
@@ -72,7 +78,7 @@ Be careful when changing thresholds in `configs/app_settings.yaml`, because they
 When continuing development, prefer this order:
 
 1. keep the current recognition and session flow working
-2. add or expand automated tests
+2. expand automated coverage for camera runtime, video uploads, and entry or exit lifecycle regressions
 3. tighten API response modeling and docs
 4. add database lifecycle support such as migrations or versioning
 5. improve moderation and operator workflows
@@ -85,9 +91,14 @@ Likely first-pass files:
 
 - `configs/app_settings.yaml`
 - `src/app.py`
+- `src/bootstrap.py`
 - `src/services/session_service.py`
 - `src/services/storage_service.py`
+- `src/services/vehicle_registry_service.py`
 - `src/api/routes.py`
+- `src/api/settings_support.py`
+- `src/api/upload_support.py`
+- `src/api/dashboard_support.py`
 - `src/api/schemas.py`
 - `templates/index.html`
 - `static/js/app.js`
@@ -99,11 +110,11 @@ Likely first-pass files:
 The current config defaults to an ONNX detector runtime:
 
 - backend: `onnxruntime`
-- ONNX weights path: `models/detector/best.onnx`
+- ONNX weights path: `models/detector/yolo26nbest.onnx`
 
 The older Ultralytics path is still supported:
 
-- PT weights path: `models/detector/best.pt`
+- PT weights path: `models/detector/yolo26nbest.pt`
 
 If detector readiness looks wrong, check both the configured backend and the corresponding weights file.
 

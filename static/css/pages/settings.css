@@ -1,0 +1,82 @@
+/* ===================================================================
+   Settings And Login Pages
+   =================================================================== */
+
+.settings-page-main {
+    margin-top: var(--space-5);
+}
+
+.settings-panel {
+    margin-top: var(--space-5);
+}
+
+.settings-panel-page {
+    margin-top: 0;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+}
+
+.settings-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-50);
+}
+
+.settings-copy {
+    margin: 0 0 var(--space-3);
+}
+
+.settings-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: auto;
+    padding-top: var(--space-3);
+}
+
+.settings-updated {
+    color: var(--color-text-500);
+    font-size: 0.8rem;
+}
+
+.login-layout {
+    min-height: clamp(440px, 62vh, 690px);
+    margin-top: var(--space-5);
+    display: grid;
+    place-items: center;
+}
+
+.login-panel {
+    width: min(540px, 100%);
+}
+
+.login-copy-top {
+    margin: 0 0 var(--space-3);
+}
+
+.login-error-msg {
+    margin: 0 0 var(--space-3);
+    padding: 8px 10px;
+    border: 1px solid #f3bcc0;
+    border-radius: var(--radius-xs);
+    background: var(--color-error-bg);
+    color: var(--color-error-fg);
+}
+
+.login-form {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.login-submit-wrap {
+    margin-top: var(--space-2);
+}

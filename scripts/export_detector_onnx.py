@@ -10,12 +10,16 @@ from ultralytics import YOLO
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export the trained detector to ONNX for ONNX Runtime.")
-    parser.add_argument("--weights", default="models/detector/best.pt", help="Path to the trained .pt detector.")
+    parser.add_argument(
+        "--weights",
+        default="models/detector/yolo26nbest.pt",
+        help="Path to the trained .pt detector.",
+    )
     parser.add_argument("--imgsz", type=int, default=640, help="Export image size.")
     parser.add_argument("--opset", type=int, default=12, help="ONNX opset version.")
     parser.add_argument(
         "--output",
-        default="outputs/detector/best.onnx",
+        default="models/detector/yolo26nbest.onnx",
         help="Final ONNX output path.",
     )
     parser.add_argument("--simplify", action="store_true", help="Simplify the exported ONNX graph when supported.")
