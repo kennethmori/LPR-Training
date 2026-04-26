@@ -10,17 +10,16 @@ import cv2
 
 from src.services.camera_support import (
     annotate_tracked_frame,
-    attach_camera_images,
     compute_fps,
     encode_preview_frame,
     mark_frame,
     mark_processed,
-    placeholder_frame,
-    resolve_camera_source,
-    should_emit_payload,
     tracking_active,
     update_tracked_detection,
 )
+from src.services.camera_capture import open_camera_capture, release_camera_capture
+from src.services.camera_payloads import apply_camera_payload
+from src.services.camera_stream import multipart_frame_stream
 
 logger = logging.getLogger(__name__)
 
@@ -77,19 +76,10 @@ class CameraService:
             self.last_start_error = None
             return True
 
-        source = resolve_camera_source(self.settings)
-        if source is None:
-            self.last_start_error = "camera_source_missing"
+        self.capture, start_error = open_camera_capture(self.settings)
+        if start_error is not None:
+            self.last_start_error = start_error
             return False
-        self.capture = cv2.VideoCapture(source)
-        if not self.capture.isOpened():
-            self.capture = None
-            self.last_start_error = f"camera_open_failed:{source}"
-            return False
-
-        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(self.settings.get("width", 1280)))
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(self.settings.get("height", 720)))
 
         self.stop_event.clear()
         self._reset_stats()
@@ -105,7 +95,7 @@ class CameraService:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
         if self.capture is not None:
-            self.capture.release()
+            release_camera_capture(self.capture)
             self.capture = None
         with self.stats_lock:
             self.frame_timestamps.clear()
@@ -180,10 +170,7 @@ class CameraService:
         finally:
             self.running = False
             if self.capture is not None:
-                try:
-                    self.capture.release()
-                except (cv2.error, RuntimeError, AttributeError, OSError):
-                    pass
+                release_camera_capture(self.capture)
                 self.capture = None
 
     def _reset_stats(self) -> None:
@@ -260,19 +247,10 @@ class CameraService:
             }
 
     def stream_generator(self):
-        stream_frame_interval_seconds = max(float(self.settings.get("stream_frame_interval_seconds", 0.03) or 0.03), 0.01)
-        while True:
-            frame = self.latest_frame_bytes
-            if frame is None:
-                placeholder = placeholder_frame()
-                success, encoded = cv2.imencode(".jpg", placeholder)
-                frame = encoded.tobytes() if success else b""
-
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-            )
-            time.sleep(stream_frame_interval_seconds)
+        return multipart_frame_stream(
+            get_latest_frame_bytes=lambda: self.latest_frame_bytes,
+            settings=self.settings,
+        )
 
     def _next_process_interval(self, frame_index: int) -> int:
         if self._tracking_active(frame_index):
@@ -317,27 +295,22 @@ class CameraService:
             frame=frame,
             frame_index=frame_index,
         )
-        attach_camera_images(
+        self._mark_processed()
+        self.processed_payload_count += 1
+        apply_camera_payload(
             pipeline=self.pipeline,
             settings=self.settings,
             payload=payload,
             annotated_frame=annotated_frame,
             crop_image=crop_image,
+            processed_payload_count=self.processed_payload_count,
+            on_payload=self.on_payload,
+            set_latest_payload=lambda value: setattr(self, "latest_payload", value),
+            set_latest_detected_payload=lambda value: setattr(self, "latest_detected_payload", value),
         )
-        self.latest_payload = payload
-        if payload.get("plate_detected"):
-            self.latest_detected_payload = dict(payload)
         self._update_tracked_detection(payload, frame_index)
         if not payload.get("plate_detected"):
             annotated_frame = self._annotate_tracked_frame(frame, frame_index)
-        self._mark_processed()
-        self.processed_payload_count += 1
-        if self.on_payload is not None and should_emit_payload(
-            self.settings,
-            payload=payload,
-            processed_payload_count=self.processed_payload_count,
-        ):
-            self.on_payload(payload)
         return payload, annotated_frame
 
     def _process_pipeline_frame(self, frame: Any, frame_index: int) -> tuple[dict[str, Any], Any]:
@@ -347,24 +320,19 @@ class CameraService:
             camera_role=self.camera_role,
             source_name=self.source_name,
         )
-        attach_camera_images(
+        self._mark_processed()
+        self._update_tracked_detection(payload, frame_index)
+        self.frames_until_process = max(self._next_process_interval(frame_index) - 1, 0)
+        self.processed_payload_count += 1
+        apply_camera_payload(
             pipeline=self.pipeline,
             settings=self.settings,
             payload=payload,
             annotated_frame=annotated_frame,
             crop_image=crop_image,
-        )
-        self.latest_payload = payload
-        if payload.get("plate_detected"):
-            self.latest_detected_payload = dict(payload)
-        self._mark_processed()
-        self._update_tracked_detection(payload, frame_index)
-        self.frames_until_process = max(self._next_process_interval(frame_index) - 1, 0)
-        self.processed_payload_count += 1
-        if self.on_payload is not None and should_emit_payload(
-            self.settings,
-            payload=payload,
             processed_payload_count=self.processed_payload_count,
-        ):
-            self.on_payload(payload)
+            on_payload=self.on_payload,
+            set_latest_payload=lambda value: setattr(self, "latest_payload", value),
+            set_latest_detected_payload=lambda value: setattr(self, "latest_detected_payload", value),
+        )
         return payload, annotated_frame

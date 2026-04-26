@@ -94,6 +94,13 @@ class VehicleRegistryService:
             for row in rows
         ]
 
+    @staticmethod
+    def _profile_photo_url(plate_number: str) -> str:
+        normalized_plate = normalized_plate_number(plate_number)
+        if not normalized_plate:
+            return ""
+        return f"/static/profile_photos/{normalized_plate}.jpg"
+
     def lookup_plate(self, plate_number: Any) -> dict[str, Any]:
         normalized_plate = normalized_plate_number(plate_number)
         if not normalized_plate:
@@ -150,6 +157,7 @@ class VehicleRegistryService:
             expiry_date=vehicle_row.get("expiry_date"),
             status_notes=str(vehicle_row.get("status_notes", "") or ""),
             record_source=str(vehicle_row.get("record_source", "") or ""),
+            profile_photo_url=self._profile_photo_url(normalized_plate),
         )
 
         return VehicleLookupResult(

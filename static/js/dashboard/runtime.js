@@ -20,6 +20,7 @@ function createDashboardRuntime(context) {
         payloadForDisplay,
         renderCameraOverlay,
         renderResult,
+        setCameraControlBusy,
         setGlobalBadge,
         setRefreshBusy,
         state,
@@ -82,21 +83,30 @@ function createDashboardRuntime(context) {
             return;
         }
 
-        const payload = await sendCameraControl(role, "start");
-        if (payload.status !== "running") {
-            setGlobalBadge("ERROR", "error");
-            if (payload.message) {
-                els.resultJson.textContent = payload.message;
+        if (typeof setCameraControlBusy === "function") {
+            setCameraControlBusy(role, "start");
+        }
+        try {
+            const payload = await sendCameraControl(role, "start");
+            if (payload.status !== "running") {
+                setGlobalBadge("ERROR", "error");
+                if (payload.message) {
+                    els.resultJson.textContent = payload.message;
+                }
+                await refreshStatus();
+                return;
+            }
+
+            if (typeof setSourceTab === "function") {
+                setSourceTab(role);
             }
             await refreshStatus();
-            return;
+            await refreshLatestResultForRole(role, { renderJson: false });
+        } finally {
+            if (typeof setCameraControlBusy === "function") {
+                setCameraControlBusy(role, "");
+            }
         }
-
-        if (typeof setSourceTab === "function") {
-            setSourceTab(role);
-        }
-        await refreshStatus();
-        await refreshLatestResultForRole(role, { renderJson: false });
     }
 
     async function stopCamera(role) {
@@ -105,18 +115,29 @@ function createDashboardRuntime(context) {
             return;
         }
 
-        const payload = await sendCameraControl(role, "stop");
-        if (payload.status !== "stopped") {
-            setGlobalBadge("ERROR", "error");
-            if (payload.message) {
-                els.resultJson.textContent = payload.message;
+        if (typeof setCameraControlBusy === "function") {
+            setCameraControlBusy(role, "stop");
+        }
+        try {
+            const payload = await sendCameraControl(role, "stop");
+            if (payload.status !== "stopped") {
+                setGlobalBadge("ERROR", "error");
+                if (payload.message) {
+                    els.resultJson.textContent = payload.message;
+                }
+            }
+            await refreshStatus();
+        } finally {
+            if (typeof setCameraControlBusy === "function") {
+                setCameraControlBusy(role, "");
             }
         }
-        await refreshStatus();
         delete state.recentActivePayloadByRole[role];
         delete state.recentActiveAtByRole[role];
         delete state.recentDetectedPayloadByRole[role];
         delete state.recentDetectedAtByRole[role];
+        delete state.lastCropImageByRole[role];
+        delete state.lastVehicleLookupByRole[role];
         state.latestPayloads[role] = idlePayloadForRole(role);
         renderCameraOverlay(role, getCameraDetails(role), state.latestPayloads[role], false);
         if (state.activeSourceTab === role) {

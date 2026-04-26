@@ -10,6 +10,11 @@ from src.api.dashboard_support import (
     latest_payload_or_idle,
     record_performance_snapshot,
 )
+from src.api.response_payloads import (
+    camera_start_failed_payload,
+    camera_started_payload,
+    camera_stopped_payload,
+)
 from src.api.schemas import CameraControlPayload
 
 
@@ -20,26 +25,16 @@ def register_camera_routes(router: APIRouter) -> None:
         started = camera.start()
         if started:
             record_performance_snapshot(request, source=f"camera_start:{role}", force=True)
-            return {
-                "status": "running",
-                "message": f"Camera '{role}' started.",
-                "role": role,
-                "error_code": None,
-            }
+            return camera_started_payload(role)
         message, error_code = camera_start_message(camera, role)
-        return {
-            "status": "error",
-            "message": message,
-            "role": role,
-            "error_code": error_code,
-        }
+        return camera_start_failed_payload(role=role, message=message, error_code=error_code)
 
     @router.post("/cameras/{role}/stop", response_model=CameraControlPayload)
     def stop_camera_by_role(request: Request, role: str):
         camera = get_camera_or_404(request, role)
         camera.stop()
         record_performance_snapshot(request, source=f"camera_stop:{role}", force=True)
-        return {"status": "stopped", "message": f"Camera '{role}' stopped.", "role": role}
+        return camera_stopped_payload(role)
 
     @router.get("/cameras/{role}/stream")
     def stream_by_role(request: Request, role: str):

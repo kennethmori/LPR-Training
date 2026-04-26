@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 from typing import Any
 
 from src.domain.models import RecognitionEvent, SessionDecision
+from src.services.session_lifecycle import handle_entry_event, handle_exit_event
+from src.services.session_matching import find_recent_ambiguous_session
 from src.services.session_rules import (
     character_distance,
     event_strength,
     normalized_plate_number,
     parse_iso_timestamp,
-    should_refine_open_session,
 )
 
 
@@ -41,6 +43,7 @@ class SessionService:
         self.ambiguity_char_distance = int(ambiguity_char_distance)
         self.ready = bool(enabled and getattr(storage_service, "ready", False))
         self.mode = "ready" if self.ready else "disabled_or_unavailable"
+        self._decision_lock = threading.RLock()
 
     def _normalized_event(self, event: dict[str, Any] | RecognitionEvent) -> RecognitionEvent:
         if isinstance(event, RecognitionEvent):
@@ -129,57 +132,12 @@ class SessionService:
         event: RecognitionEvent,
         expected_camera_role: str,
     ) -> tuple[dict[str, Any] | None, int]:
-        plate_number = normalized_plate_number(event.plate_number)
-        camera_role = str(event.camera_role or "").strip().lower()
-        current_ts = parse_iso_timestamp(event.timestamp)
-        if camera_role != expected_camera_role or not plate_number or current_ts is None:
-            return None, 0
-        if self.ambiguity_window_seconds <= 0 or self.ambiguity_char_distance < 1:
-            return None, 0
-
-        best_match: dict[str, Any] | None = None
-        best_distance = 0
-        best_sort_key: tuple[int, float, float] | None = None
-
-        for open_session in self.session_repository.list_active_sessions(limit=50):
-            session_plate = str(open_session.get("plate_number", "")).strip().upper()
-            if not session_plate or session_plate == plate_number:
-                continue
-            if len(session_plate) != len(plate_number):
-                continue
-
-            distance = character_distance(plate_number, session_plate)
-            if distance < 1 or distance > self.ambiguity_char_distance:
-                continue
-
-            session_ts = parse_iso_timestamp(open_session.get("entry_time")) or parse_iso_timestamp(
-                open_session.get("updated_at")
-            )
-            if session_ts is None:
-                continue
-
-            seconds = abs((current_ts - session_ts).total_seconds())
-            if seconds > float(self.ambiguity_window_seconds):
-                continue
-
-            sort_key = self._ambiguous_session_sort_key(open_session, session_ts, distance)
-            if best_sort_key is None or sort_key < best_sort_key:
-                best_match = open_session
-                best_distance = distance
-                best_sort_key = sort_key
-
-        return best_match, best_distance
-
-    @staticmethod
-    def _ambiguous_session_sort_key(
-        open_session: dict[str, Any],
-        session_ts: Any,
-        distance: int,
-    ) -> tuple[int, float, float]:
-        return (
-            distance,
-            -float(open_session.get("entry_confidence", 0.0) or 0.0),
-            -session_ts.timestamp(),
+        return find_recent_ambiguous_session(
+            open_sessions=self.session_repository.list_active_sessions(limit=50),
+            event=event,
+            expected_camera_role=expected_camera_role,
+            ambiguity_window_seconds=self.ambiguity_window_seconds,
+            ambiguity_char_distance=self.ambiguity_char_distance,
         )
 
     def _log_ignored_event(
@@ -206,6 +164,10 @@ class SessionService:
         return payload
 
     def process_recognition_event(self, event: dict[str, Any] | RecognitionEvent) -> dict[str, Any]:
+        with self._decision_lock:
+            return self._process_recognition_event_locked(event)
+
+    def _process_recognition_event_locked(self, event: dict[str, Any] | RecognitionEvent) -> dict[str, Any]:
         if not self.enabled:
             return {"status": "ignored", "reason": "session_service_disabled"}
         if not getattr(self.storage_service, "ready", False):
@@ -259,114 +221,9 @@ class SessionService:
             )
 
         if camera_role == "entry":
-            near_open_session, near_open_session_distance = self._find_recent_ambiguous_open_session(event_row)
-            if near_open_session is not None:
-                near_session_id = int(near_open_session["id"])
-                near_session_plate = str(near_open_session.get("plate_number", "")).strip().upper()
-                near_open_reason = (
-                    f"near_open_session:{near_session_plate}:distance_{near_open_session_distance}"
-                )
-                if should_refine_open_session(event_row, near_open_session):
-                    self.session_repository.update_open_session_entry_from_event(
-                        session_id=near_session_id,
-                        event=event_row,
-                        note=near_open_reason,
-                    )
-                    entry_event_id = near_open_session.get("entry_event_id")
-                    if entry_event_id is not None:
-                        self.event_repository.update_recognition_event_from_event(
-                            recognition_event_id=int(entry_event_id),
-                            event=event_row,
-                            note=near_open_reason,
-                        )
-                    return self._log_ignored_event(
-                        event=event_row,
-                        event_action="ignored_ambiguous_near_match",
-                        reason=f"{near_open_reason}:refined_open_session",
-                        extra={
-                            "session_id": near_session_id,
-                            "session_updated": True,
-                        },
-                        status="merged",
-                    )
+            return handle_entry_event(self, event_row)
 
-                return self._log_ignored_event(
-                    event=event_row,
-                    event_action="ignored_ambiguous_near_match",
-                    reason=near_open_reason,
-                    extra={"session_id": near_session_id},
-                )
-
-            open_session = self.session_repository.find_open_session(plate_number)
-            if open_session and self.allow_only_one_open_session_per_plate:
-                return self._log_ignored_event(
-                    event=event_row,
-                    event_action="ignored_duplicate",
-                    reason="open_session_already_exists",
-                    extra={"session_id": int(open_session["id"])},
-                )
-
-            event_id = self.event_repository.insert_recognition_event(event=event_row, event_action="session_opened")
-            session_id = self.session_repository.create_vehicle_session(recognition_event_id=event_id, event=event_row)
-            self.event_repository.update_recognition_event_links(
-                recognition_event_id=event_id,
-                created_session_id=session_id,
-            )
-            return SessionDecision(
-                status="processed",
-                event_action="session_opened",
-                recognition_event_id=event_id,
-                session_id=session_id,
-            ).to_dict()
-
-        open_session = self.session_repository.find_open_session(plate_number)
-        close_note = ""
-        if open_session is None:
-            near_open_session, near_open_session_distance = self._find_recent_ambiguous_exit_session(event_row)
-            if near_open_session is not None:
-                near_session_plate = str(near_open_session.get("plate_number", "")).strip().upper()
-                close_note = f"near_open_session:{near_session_plate}:distance_{near_open_session_distance}"
-                open_session = near_open_session
-
-        if open_session:
-            event_id = self.event_repository.insert_recognition_event(
-                event=event_row,
-                event_action="session_closed",
-                note=close_note,
-            )
-            session_id = int(open_session["id"])
-            self.session_repository.close_vehicle_session(
-                session_id=session_id,
-                recognition_event_id=event_id,
-                event=event_row,
-            )
-            self.event_repository.update_recognition_event_links(
-                recognition_event_id=event_id,
-                closed_session_id=session_id,
-            )
-            return SessionDecision(
-                status="processed",
-                event_action="session_closed",
-                recognition_event_id=event_id,
-                session_id=session_id,
-            ).to_dict()
-
-        event_id = self.event_repository.insert_recognition_event(event=event_row, event_action="unmatched_exit")
-        unmatched_exit_id = None
-        if self.store_unmatched_exit_events:
-            unmatched_exit_id = self.session_repository.insert_unmatched_exit(
-                recognition_event_id=event_id,
-                event=event_row,
-                reason="no_open_session_for_plate",
-            )
-        decision = SessionDecision(
-            status="processed",
-            event_action="unmatched_exit",
-            recognition_event_id=event_id,
-            unmatched_exit_id=unmatched_exit_id,
-        ).to_dict()
-        decision.setdefault("unmatched_exit_id", unmatched_exit_id)
-        return decision
+        return handle_exit_event(self, event_row)
 
     @staticmethod
     def _dedupe_rows(rows: list[dict[str, Any]], key_fields: tuple[str, ...]) -> list[dict[str, Any]]:

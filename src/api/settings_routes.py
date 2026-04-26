@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Callable
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,22 +14,14 @@ from src.api.schemas import (
 )
 from src.api.settings_support import (
     apply_camera_settings,
-    apply_detector_runtime_settings,
     camera_settings_payload,
     detector_runtime_settings_payload,
     normalize_camera_source,
-    normalize_onnx_provider_mode,
     persist_settings_file,
     recognition_settings_payload,
 )
-
-OCR_RELOAD_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    AttributeError,
-    OSError,
-)
+from src.services.detector_runtime_service import apply_detector_runtime_settings, normalize_onnx_provider_mode
+from src.services.runtime_settings_service import apply_recognition_runtime_settings
 
 
 def register_settings_routes(
@@ -83,84 +74,12 @@ def register_settings_routes(
 
     @router.put("/settings/recognition", response_model=RecognitionSettingsPayload)
     def update_recognition_settings(request: Request, payload: RecognitionSettingsUpdatePayload):
-        detector_conf = min(max(float(payload.min_detector_confidence), 0.0), 1.0)
-        ocr_conf = min(max(float(payload.min_ocr_confidence), 0.0), 1.0)
-        stable_occurrences = max(int(payload.min_stable_occurrences), 1)
-        detector_conf_threshold = min(max(float(payload.detector_confidence_threshold), 0.0), 1.0)
-        detector_iou_threshold = min(max(float(payload.detector_iou_threshold), 0.0), 1.0)
-        detector_max_detections = max(int(payload.detector_max_detections), 1)
-        min_detector_conf_for_ocr = min(max(float(payload.min_detector_confidence_for_ocr), 0.0), 1.0)
-        min_sharpness_for_ocr = max(float(payload.min_sharpness_for_ocr), 0.0)
-        ocr_cooldown_seconds = max(float(payload.ocr_cooldown_seconds), 0.0)
-        max_threads = max(int(os.cpu_count() or 1), 1)
-        ocr_cpu_threads = min(max(int(payload.ocr_cpu_threads), 1), max_threads)
-
-        settings = request.app.state.settings
-        settings.setdefault("session", {})
-        settings.setdefault("stabilization", {})
-        settings.setdefault("detector", {})
-        settings.setdefault("tracking", {})
-        settings.setdefault("ocr", {})
-        settings["session"]["min_detector_confidence"] = detector_conf
-        settings["session"]["min_ocr_confidence"] = ocr_conf
-        settings["session"]["min_stable_occurrences"] = stable_occurrences
-        settings["detector"]["confidence_threshold"] = detector_conf_threshold
-        settings["detector"]["iou_threshold"] = detector_iou_threshold
-        settings["detector"]["max_detections"] = detector_max_detections
-        settings["tracking"]["min_detector_confidence_for_ocr"] = min_detector_conf_for_ocr
-        settings["tracking"]["min_sharpness_for_ocr"] = min_sharpness_for_ocr
-        settings["tracking"]["ocr_cooldown_seconds"] = ocr_cooldown_seconds
-        settings["tracking"]["stop_ocr_after_stable_occurrences"] = stable_occurrences
-        settings["tracking"]["recognition_event_min_stable_occurrences"] = stable_occurrences
-        settings["ocr"]["cpu_threads"] = ocr_cpu_threads
-
-        session_service = request.app.state.session_service
-        session_service.min_detector_confidence = detector_conf
-        session_service.min_ocr_confidence = ocr_conf
-        session_service.min_stable_occurrences = stable_occurrences
-        detector = request.app.state.detector
-        detector.settings["confidence_threshold"] = detector_conf_threshold
-        detector.settings["iou_threshold"] = detector_iou_threshold
-        detector.settings["max_detections"] = detector_max_detections
-        request.app.state.pipeline.settings["confidence_threshold"] = detector_conf_threshold
-        request.app.state.pipeline.settings["iou_threshold"] = detector_iou_threshold
-        request.app.state.pipeline.settings["max_detections"] = detector_max_detections
-        for camera in request.app.state.camera_services.values():
-            tracker_service = getattr(camera, "tracker_service", None)
-            if tracker_service is None:
-                continue
-            tracker_service.settings["min_detector_confidence_for_ocr"] = min_detector_conf_for_ocr
-            tracker_service.settings["min_sharpness_for_ocr"] = min_sharpness_for_ocr
-            tracker_service.settings["ocr_cooldown_seconds"] = ocr_cooldown_seconds
-            tracker_service.settings["stop_ocr_after_stable_occurrences"] = stable_occurrences
-            tracker_service.settings["recognition_event_min_stable_occurrences"] = stable_occurrences
-            tracker_service.min_detector_confidence_for_ocr = min_detector_conf_for_ocr
-            tracker_service.min_sharpness_for_ocr = min_sharpness_for_ocr
-            tracker_service.ocr_cooldown_seconds = ocr_cooldown_seconds
-            tracker_service.stop_ocr_after_stable_occurrences = stable_occurrences
-            tracker_service.recognition_event_min_stable_occurrences = stable_occurrences
-
-        ocr_engine = request.app.state.ocr_engine
-        ocr_reload_error: str | None = None
-        try:
-            if hasattr(ocr_engine, "reload"):
-                ocr_engine.reload(cpu_threads=ocr_cpu_threads)
-            else:
-                ocr_engine.settings["cpu_threads"] = ocr_cpu_threads
-                result_cache = getattr(ocr_engine, "result_cache", None)
-                if result_cache is not None:
-                    result_cache.clear()
-                if hasattr(ocr_engine, "_load"):
-                    ocr_engine._load()
-            request.app.state.pipeline.settings["cpu_threads"] = ocr_cpu_threads
-        except OCR_RELOAD_EXCEPTIONS as exc:
-            ocr_reload_error = str(exc)
-
+        update = apply_recognition_runtime_settings(request.app.state, payload)
         persist_error = persist_settings_file(request)
 
         response_payload = recognition_settings_payload(request)
         message_parts = ["Recognition and live thresholds applied."]
-        if ocr_reload_error:
+        if update.ocr_reload_error:
             message_parts.append("OCR runtime reload failed; restart app to apply CPU core changes.")
         if persist_error:
             message_parts.append("YAML persist failed; changes are active only in memory.")
@@ -193,7 +112,7 @@ def register_settings_routes(
             onnx_weights_path = "models/detector/yolo26nbest.onnx"
 
         restarted_roles, failed_roles = apply_detector_runtime_settings(
-            request,
+            request.app.state,
             backend=backend,
             detector_weights_path=detector_weights_path,
             onnx_weights_path=onnx_weights_path,

@@ -1,14 +1,7 @@
 <main class="layout" id="mainContent">
     <aside class="panel controls-panel" aria-label="Controls">
         <div class="controls-group">
-            <h2 class="panel-heading">Controls</h2>
-            <label for="imageInput">Upload Image or Video</label>
-            <input id="imageInput" name="file" type="file" accept="image/*,video/*">
-            <button id="uploadBtn" type="button" class="btn-primary btn-full">Upload &amp; Analyze</button>
-            <p class="helper-copy">Runs the still-image or sampled-video pipeline without starting a live camera.</p>
-        </div>
-
-        <div class="controls-group">
+            <h2 class="panel-heading">Gate Controls</h2>
             <div class="section-head section-head--camera">
                 <div>
                     <h3 class="panel-heading panel-heading--flush">Entry Camera</h3>
@@ -17,8 +10,8 @@
                 <span class="camera-status-pill" id="entryCamLiveBadge">Idle</span>
             </div>
             <div class="btn-row">
-                <button id="startEntryBtn" type="button" class="btn-primary" data-camera-role="entry">Start</button>
-                <button id="stopEntryBtn" type="button" class="btn-secondary" data-camera-role="entry">Stop</button>
+                <button id="startEntryBtn" type="button" class="btn-primary" data-icon="start" data-camera-role="entry">Start</button>
+                <button id="stopEntryBtn" type="button" class="btn-secondary" data-icon="stop" data-camera-role="entry">Stop</button>
             </div>
         </div>
 
@@ -31,10 +24,20 @@
                 <span class="camera-status-pill" id="exitCamLiveBadge">Idle</span>
             </div>
             <div class="btn-row">
-                <button id="startExitBtn" type="button" class="btn-primary" data-camera-role="exit">Start</button>
-                <button id="stopExitBtn" type="button" class="btn-secondary" data-camera-role="exit">Stop</button>
+                <button id="startExitBtn" type="button" class="btn-primary" data-icon="start" data-camera-role="exit">Start</button>
+                <button id="stopExitBtn" type="button" class="btn-secondary" data-icon="stop" data-camera-role="exit">Stop</button>
             </div>
         </div>
+
+        <details class="compact-details controls-compact">
+            <summary>Test Upload</summary>
+            <div class="controls-group controls-group--nested">
+                <label for="imageInput">Image or Video</label>
+                <input id="imageInput" name="file" type="file" accept="image/*,video/*">
+                <button id="uploadBtn" type="button" class="btn-secondary btn-full" data-icon="upload">Upload &amp; Analyze</button>
+                <p class="helper-copy">Runs the still-image or sampled-video pipeline without starting a live camera.</p>
+            </div>
+        </details>
 
         <details class="compact-details controls-compact">
             <summary>Show Readiness Details</summary>
@@ -64,7 +67,7 @@
             <h2 class="panel-heading">Workspace</h2>
             <div class="workspace-toolbar">
                 <div class="workspace-actions">
-                    <button id="workspaceSnapshotsBtn" type="button" class="btn-secondary btn-sm">Snapshots</button>
+                    <button id="workspaceSnapshotsBtn" type="button" class="btn-secondary btn-sm" data-icon="snapshots">Snapshots</button>
                 </div>
                 <div class="workspace-badges">
                     <span class="badge" id="workspaceRoleBadge">UPLOAD</span>
@@ -75,28 +78,28 @@
 
         <div class="tab-bar" role="tablist" aria-label="Workspace views">
             <button
-                class="tab-btn is-active"
+                class="tab-btn"
                 id="sourceTabUpload"
                 data-tab="upload"
                 type="button"
                 role="tab"
-                aria-selected="true"
+                aria-selected="false"
                 aria-controls="tabUpload"
-                tabindex="0"
+                tabindex="-1"
             >
-                Upload
+                Test Upload
             </button>
             <button
-                class="tab-btn"
+                class="tab-btn is-active"
                 id="sourceTabEntry"
                 data-tab="entry"
                 type="button"
                 role="tab"
-                aria-selected="false"
+                aria-selected="true"
                 aria-controls="tabEntry"
-                tabindex="-1"
+                tabindex="0"
             >
-                Entry Feed
+                Entry
             </button>
             <button
                 class="tab-btn"
@@ -108,20 +111,20 @@
                 aria-controls="tabExit"
                 tabindex="-1"
             >
-                Exit Feed
+                Exit
             </button>
         </div>
 
         <div class="workspace-grid">
             <div class="workspace-feed-stack">
-                <div id="tabUpload" class="tab-content is-active" role="tabpanel" aria-labelledby="sourceTabUpload">
+                <div id="tabUpload" class="tab-content" role="tabpanel" aria-labelledby="sourceTabUpload" hidden>
                     <div class="frame source-view">
                         <img id="previewImage" alt="Uploaded image with detection overlay" hidden>
                         <span class="frame-placeholder" id="uploadPlaceholder">Upload an image or video to begin analysis</span>
                     </div>
                 </div>
 
-                <div id="tabEntry" class="tab-content" role="tabpanel" aria-labelledby="sourceTabEntry" hidden>
+                <div id="tabEntry" class="tab-content is-active" role="tabpanel" aria-labelledby="sourceTabEntry">
                     <div class="frame source-view">
                         <img id="entryStream" alt="Entry camera live feed" hidden>
                         <div class="live-overlay" id="entryOverlay" hidden>
@@ -307,15 +310,7 @@
             </details>
 
             <details class="compact-details compact-details--recognition">
-                <summary>Session Information</summary>
-                <div class="data-row">
-                    <span class="data-label">Session Decision</span>
-                    <span class="data-value" id="sessionDecision">—</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Decision Reason</span>
-                    <span class="data-value" id="sessionDecisionReason">—</span>
-                </div>
+                <summary>Runtime Information</summary>
                 <div class="data-row">
                     <span class="data-label">Detector</span>
                     <span class="data-value" id="detectorMode">—</span>
@@ -349,11 +344,12 @@
                         id="viewProfileBtn"
                         type="button"
                         class="btn-primary action-link is-disabled"
+                        data-icon="profile"
                         aria-disabled="true"
                     >
                         View Profile
                     </button>
-                    <button id="manualOverrideBtn" type="button" class="btn-secondary" disabled>Manual Override</button>
+                    <button id="manualOverrideBtn" type="button" class="btn-secondary" data-icon="manual" disabled>Manual Override</button>
                 </div>
             </section>
         </section>

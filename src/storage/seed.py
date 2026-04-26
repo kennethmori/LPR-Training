@@ -76,7 +76,7 @@ class DummyVehicleSeeder:
 
             profile_templates = [
                 {
-                    "owner_name": "Juan Dela Cruz",
+                    "owner_name": "Ivan SanaOil",
                     "user_category": "student",
                     "owner_affiliation": "College of Engineering",
                     "owner_reference": "2021-12345",
@@ -96,7 +96,7 @@ class DummyVehicleSeeder:
                     ],
                 },
                 {
-                    "owner_name": "Maria Santos",
+                    "owner_name": "Princess Adrian",
                     "user_category": "staff",
                     "owner_affiliation": "Security Management Office",
                     "owner_reference": "EMP-2048",
@@ -116,7 +116,7 @@ class DummyVehicleSeeder:
                     ],
                 },
                 {
-                    "owner_name": "Dr. Liza Ramos",
+                    "owner_name": "Dr. Kenneth",
                     "user_category": "faculty",
                     "owner_affiliation": "College of Science and Mathematics",
                     "owner_reference": "FAC-318",
@@ -136,7 +136,7 @@ class DummyVehicleSeeder:
                     ],
                 },
                 {
-                    "owner_name": "Rogelio Mercado",
+                    "owner_name": "Hannah Montana",
                     "user_category": "contractor",
                     "owner_affiliation": "Campus Facilities Project",
                     "owner_reference": "CTR-552",
@@ -155,7 +155,7 @@ class DummyVehicleSeeder:
                     ],
                 },
                 {
-                    "owner_name": "Allan Rivera",
+                    "owner_name": "Dra. Talmagjey",
                     "user_category": "alumni",
                     "owner_affiliation": "External Stakeholder",
                     "owner_reference": "ALM-778",

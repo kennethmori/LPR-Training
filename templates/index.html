@@ -3,6 +3,13 @@
 {% block meta_description %}USM License Plate Recognition System - Operator Dashboard{% endblock %}
 {% block title %}{{ app_title }}{% endblock %}
 {% block body_class %}page-dashboard{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/static/css/pages/dashboard-workspace.css?v={{ server_time }}">
+    <link rel="stylesheet" href="/static/css/pages/dashboard-recognition.css?v={{ server_time }}">
+    <link rel="stylesheet" href="/static/css/pages/dashboard-activity.css?v={{ server_time }}">
+    <link rel="stylesheet" href="/static/css/pages/dashboard-records.css?v={{ server_time }}">
+    <link rel="stylesheet" href="/static/css/pages/dashboard-overlays.css?v={{ server_time }}">
+{% endblock %}
 
 {% block page %}
     <div class="visually-hidden" id="statusLiveRegion" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -12,7 +19,7 @@
         {% include "partials/dashboard/overview.html" %}
         {% include "partials/dashboard/workspace.html" %}
         <details class="secondary-shell" id="secondaryWorkspace">
-            <summary>Open Detailed Records</summary>
+            <summary>Records Workspace</summary>
             <div class="secondary-shell__body">
                 {% include "partials/dashboard/records_panel.html" %}
                 {% include "partials/dashboard/debug_panel.html" %}

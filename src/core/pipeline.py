@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +17,12 @@ from src.core.cropper import (
     resize_for_ocr,
 )
 from src.core.pipeline_payloads import empty_stable_result, encode_image_base64
-from src.core.recognition_events import build_stable_recognition_event
+from src.core.pipeline_frame_payloads import (
+    build_no_detection_payload,
+    build_pipeline_log_row,
+    build_success_payload,
+)
+from src.core.recognition_events import build_stable_recognition_event as build_stable_recognition_event_payload
 
 
 class LicensePlatePipeline:
@@ -39,6 +45,7 @@ class LicensePlatePipeline:
         self.output_paths = output_paths
         self.stream_states: dict[str, dict[str, Any]] = {}
         self.last_saved_artifacts: dict[tuple[str, str, str], float] = {}
+        self._state_lock = threading.RLock()
         for path in output_paths.values():
             path.mkdir(parents=True, exist_ok=True)
 
@@ -60,42 +67,33 @@ class LicensePlatePipeline:
             previous_stable = empty_stable_result()
             if source_type in {"camera", "video"}:
                 previous_stable = self.result_service.latest_for(resolved_stream_key) or empty_stable_result()
-            payload = {
-                "source_type": source_type,
-                "camera_role": camera_role,
-                "source_name": source_name,
-                "status": "no_detection",
-                "message": "No license plate detected.",
-                "detector_mode": self.detector.mode,
-                "ocr_mode": self.ocr_engine.mode,
-                "detection": None,
-                "ocr": None,
-                "stable_result": previous_stable,
-                "plate_detected": False,
-                "timestamp": timestamp,
-                "timings_ms": {
-                    "detector": round(detection_time_ms, 2),
-                    "ocr": 0.0,
-                    "pipeline": round((time.perf_counter() - started) * 1000, 2),
-                },
-                "recognition_event": None,
-            }
+            payload = build_no_detection_payload(
+                source_type=source_type,
+                camera_role=camera_role,
+                source_name=source_name,
+                detector_mode=self.detector.mode,
+                ocr_mode=self.ocr_engine.mode,
+                previous_stable=previous_stable,
+                timestamp=timestamp,
+                detection_time_ms=detection_time_ms,
+                pipeline_time_ms=(time.perf_counter() - started) * 1000,
+            )
             if source_type not in {"camera", "video"} or bool(self.settings.get("log_no_detection_frames", False)):
                 self.logging_service.append(
-                    {
-                        "timestamp": timestamp,
-                        "source_type": source_type,
-                        "camera_role": camera_role,
-                        "source_name": source_name,
-                        "plate_detected": False,
-                        "plate_number": previous_stable["value"],
-                        "detector_confidence": 0.0,
-                        "ocr_confidence": 0.0,
-                        "raw_text": "",
-                        "cleaned_text": "",
-                        "stable_text": previous_stable["value"],
-                        "timings_ms": payload["timings_ms"],
-                    }
+                    build_pipeline_log_row(
+                        timestamp=timestamp,
+                        source_type=source_type,
+                        camera_role=camera_role,
+                        source_name=source_name,
+                        plate_detected=False,
+                        plate_number=previous_stable["value"],
+                        detector_confidence=0.0,
+                        ocr_confidence=0.0,
+                        raw_text="",
+                        cleaned_text="",
+                        stable_text=previous_stable["value"],
+                        timings_ms=payload["timings_ms"],
+                    )
                 )
             return payload, frame.copy(), None
 
@@ -119,12 +117,13 @@ class LicensePlatePipeline:
             float(ocr_result["confidence"]),
             stream_key=resolved_stream_key,
         )
-        self.stream_states[resolved_stream_key] = {
-            "bbox": dict(padded_bbox),
-            "ocr_result": dict(ocr_result),
-            "cleaned_text": cleaned_text,
-            "updated_at_monotonic": time.perf_counter(),
-        }
+        with self._state_lock:
+            self.stream_states[resolved_stream_key] = {
+                "bbox": dict(padded_bbox),
+                "ocr_result": dict(ocr_result),
+                "cleaned_text": cleaned_text,
+                "updated_at_monotonic": time.perf_counter(),
+            }
 
         displayed_text = stable_result["value"] if stable_result["accepted"] else cleaned_text
         annotated = annotate_detection(
@@ -135,10 +134,7 @@ class LicensePlatePipeline:
             text=displayed_text,
         )
 
-        recognition_event = build_stable_recognition_event(
-            settings=self.settings,
-            output_paths=self.output_paths,
-            last_saved_artifacts=self.last_saved_artifacts,
+        recognition_event = self.build_stable_recognition_event(
             timestamp=timestamp,
             camera_role=camera_role,
             source_name=source_name,
@@ -154,47 +150,38 @@ class LicensePlatePipeline:
             crop=resized_crop,
         )
 
-        payload = {
-            "source_type": source_type,
-            "camera_role": camera_role,
-            "source_name": source_name,
-            "status": "success",
-            "message": "Plate detected and OCR processed.",
-            "detector_mode": self.detector.mode,
-            "ocr_mode": self.ocr_engine.mode,
-            "detection": best_detection,
-            "ocr": {
-                "raw_text": ocr_result["raw_text"],
-                "cleaned_text": cleaned_text,
-                "confidence": float(ocr_result["confidence"]),
-                "engine": ocr_result["engine"],
-            },
-            "stable_result": stable_result,
-            "plate_detected": True,
-            "timestamp": timestamp,
-            "timings_ms": {
-                "detector": round(detection_time_ms, 2),
-                "ocr": round(ocr_time_ms, 2),
-                "pipeline": round((time.perf_counter() - started) * 1000, 2),
-            },
-            "recognition_event": recognition_event,
-        }
+        payload = build_success_payload(
+            source_type=source_type,
+            camera_role=camera_role,
+            source_name=source_name,
+            detector_mode=self.detector.mode,
+            ocr_mode=self.ocr_engine.mode,
+            best_detection=best_detection,
+            ocr_result=ocr_result,
+            cleaned_text=cleaned_text,
+            stable_result=stable_result,
+            timestamp=timestamp,
+            detection_time_ms=detection_time_ms,
+            ocr_time_ms=ocr_time_ms,
+            pipeline_time_ms=(time.perf_counter() - started) * 1000,
+            recognition_event=recognition_event,
+        )
 
         self.logging_service.append(
-            {
-                "timestamp": timestamp,
-                "source_type": source_type,
-                "camera_role": camera_role,
-                "source_name": source_name,
-                "plate_detected": True,
-                "plate_number": stable_result["value"] or cleaned_text,
-                "detector_confidence": float(best_detection["confidence"]),
-                "ocr_confidence": float(ocr_result["confidence"]),
-                "raw_text": ocr_result["raw_text"],
-                "cleaned_text": cleaned_text,
-                "stable_text": stable_result["value"],
-                "timings_ms": payload["timings_ms"],
-            }
+            build_pipeline_log_row(
+                timestamp=timestamp,
+                source_type=source_type,
+                camera_role=camera_role,
+                source_name=source_name,
+                plate_detected=True,
+                plate_number=stable_result["value"] or cleaned_text,
+                detector_confidence=float(best_detection["confidence"]),
+                ocr_confidence=float(ocr_result["confidence"]),
+                raw_text=ocr_result["raw_text"],
+                cleaned_text=cleaned_text,
+                stable_text=stable_result["value"],
+                timings_ms=payload["timings_ms"],
+            )
         )
 
         return payload, annotated, resized_crop
@@ -206,7 +193,9 @@ class LicensePlatePipeline:
         padded_bbox: dict[str, int],
         stream_key: str,
     ) -> tuple[dict[str, Any], str, float]:
-        prior_stream_state = self.stream_states.get(stream_key)
+        with self._state_lock:
+            existing_stream_state = self.stream_states.get(stream_key)
+            prior_stream_state = dict(existing_stream_state) if existing_stream_state is not None else None
         ocr_started = time.perf_counter()
         if self._should_reuse_ocr(prior_stream_state, padded_bbox):
             ocr_result = dict(prior_stream_state["ocr_result"])
@@ -255,8 +244,48 @@ class LicensePlatePipeline:
         return bbox_scale_ratio(previous_bbox, bbox) <= max_scale_ratio
 
     def clear_stream_state(self, stream_key: str) -> None:
-        self.stream_states.pop(stream_key, None)
+        with self._state_lock:
+            self.stream_states.pop(stream_key, None)
         self.result_service.clear(stream_key)
+
+    def build_stable_recognition_event(
+        self,
+        *,
+        timestamp: str,
+        camera_role: str,
+        source_name: str,
+        source_type: str,
+        stream_key: str,
+        raw_text: str,
+        cleaned_text: str,
+        stable_result: dict[str, Any],
+        detector_confidence: float,
+        ocr_confidence: float,
+        ocr_engine: str,
+        annotated: np.ndarray,
+        crop: np.ndarray | None,
+        min_stable_occurrences: int = 1,
+    ) -> dict[str, Any] | None:
+        with self._state_lock:
+            return build_stable_recognition_event_payload(
+                settings=self.settings,
+                output_paths=self.output_paths,
+                last_saved_artifacts=self.last_saved_artifacts,
+                timestamp=timestamp,
+                camera_role=camera_role,
+                source_name=source_name,
+                source_type=source_type,
+                stream_key=stream_key,
+                raw_text=raw_text,
+                cleaned_text=cleaned_text,
+                stable_result=stable_result,
+                detector_confidence=detector_confidence,
+                ocr_confidence=ocr_confidence,
+                ocr_engine=ocr_engine,
+                annotated=annotated,
+                crop=crop,
+                min_stable_occurrences=min_stable_occurrences,
+            )
 
     _bbox_iou = staticmethod(bbox_iou)
     _bbox_center_distance_ratio = staticmethod(bbox_center_distance_ratio)

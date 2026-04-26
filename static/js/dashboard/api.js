@@ -61,6 +61,25 @@ function createDashboardApi(fetchImpl = window.fetch.bind(window)) {
                 : "/latest-result";
             return fetchJson(endpoint);
         },
+        async fetchVehicleLookup(plateNumber) {
+            const normalizedPlate = String(plateNumber || "").trim();
+            if (!normalizedPlate) return null;
+            return fetchJson(`/vehicles/lookup?plate_number=${encodeURIComponent(normalizedPlate)}`);
+        },
+        async applyManualOverride(payload) {
+            return requestJson(
+                "/moderation/manual-override",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    body: JSON.stringify(payload || {}),
+                },
+                "Manual override failed.",
+            );
+        },
         async deleteModerationRecord(entityType, entityId) {
             return requestJson(
                 `/moderation/${entityType}/${entityId}`,

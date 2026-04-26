@@ -214,6 +214,7 @@ class VehicleProfile:
     expiry_date: str | None = None
     status_notes: str = ""
     record_source: str = ""
+    profile_photo_url: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

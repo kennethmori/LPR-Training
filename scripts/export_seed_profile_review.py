@@ -10,6 +10,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "outputs" / "app_data" / "plate_events.db"
 EXPORT_DIR = BASE_DIR / "seed_profile_review"
+PROFILE_PHOTO_SOURCE_DIR = EXPORT_DIR / "source_profile_photos"
 
 
 CATEGORY_STYLES = {
@@ -67,6 +68,16 @@ def safe_copy(source_value: str | None, target_dir: Path, target_name: str) -> s
     destination = target_dir / target_name
     shutil.copy2(source, destination)
     return destination.name
+
+
+def copy_profile_photo(owner_name: str, target_dir: Path, target_stem: str) -> str | None:
+    for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        source = PROFILE_PHOTO_SOURCE_DIR / f"{owner_name}{suffix}"
+        if source.is_file():
+            destination_name = f"{target_stem}_profile{source.suffix.lower()}"
+            shutil.copy2(source, target_dir / destination_name)
+            return destination_name
+    return None
 
 
 def fetch_seed_rows() -> list[dict[str, object]]:
@@ -165,13 +176,19 @@ def export_review_bundle() -> Path:
         plate_number = str(vehicle["plate_number"])
         slug = f"{int(vehicle['vehicle_id']):02d}_{plate_number}"
 
-        profile_photo_name = f"{slug}_profile.svg"
-        write_profile_svg(
-            dirs["profile"] / profile_photo_name,
-            owner_name=str(vehicle["owner_name"]),
-            category=str(vehicle["user_category"]),
-            plate_number=plate_number,
+        profile_photo_name = copy_profile_photo(
+            str(vehicle["owner_name"]),
+            dirs["profile"],
+            slug,
         )
+        if profile_photo_name is None:
+            profile_photo_name = f"{slug}_profile.svg"
+            write_profile_svg(
+                dirs["profile"] / profile_photo_name,
+                owner_name=str(vehicle["owner_name"]),
+                category=str(vehicle["user_category"]),
+                plate_number=plate_number,
+            )
 
         crop_name = safe_copy(latest_event.get("crop_path"), dirs["crop"], f"{slug}_plate.jpg")
         frame_name = safe_copy(latest_event.get("annotated_frame_path"), dirs["frame"], f"{slug}_frame.jpg")
@@ -205,7 +222,7 @@ def export_review_bundle() -> Path:
                 "Files:",
                 "- index.html: browsable review gallery",
                 "- seed_profiles.json: exported manifest",
-                "- profile_photos/: sample profile portrait placeholders",
+                "- profile_photos/: exported profile photos or generated placeholders",
                 "- plate_crops/: latest saved plate crop per seeded profile",
                 "- annotated_frames/: latest annotated frame per seeded profile",
             ]

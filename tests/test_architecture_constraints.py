@@ -16,6 +16,11 @@ class ArchitectureConstraintTests(unittest.TestCase):
 
         self.assertIn('/static/css/base.css', base_html)
         self.assertIn('type="module" src="/static/js/app.js', index_html)
+        self.assertIn('/static/css/pages/dashboard-workspace.css', index_html)
+        self.assertIn('/static/css/pages/dashboard-recognition.css', index_html)
+        self.assertIn('/static/css/pages/dashboard-activity.css', index_html)
+        self.assertIn('/static/css/pages/dashboard-records.css', index_html)
+        self.assertIn('/static/css/pages/dashboard-overlays.css', index_html)
         self.assertNotIn("/static/js/dashboard_dom.js", index_html)
         self.assertNotIn("/static/js/dashboard_utils.js", index_html)
         self.assertNotIn("/static/js/dashboard_panels.js", index_html)
@@ -28,6 +33,11 @@ class ArchitectureConstraintTests(unittest.TestCase):
     def test_frontend_store_and_api_modules_exist(self) -> None:
         expected_paths = [
             REPO_ROOT / "static" / "css" / "base.css",
+            REPO_ROOT / "static" / "css" / "pages" / "dashboard-workspace.css",
+            REPO_ROOT / "static" / "css" / "pages" / "dashboard-recognition.css",
+            REPO_ROOT / "static" / "css" / "pages" / "dashboard-activity.css",
+            REPO_ROOT / "static" / "css" / "pages" / "dashboard-records.css",
+            REPO_ROOT / "static" / "css" / "pages" / "dashboard-overlays.css",
             REPO_ROOT / "static" / "css" / "pages" / "settings.css",
             REPO_ROOT / "static" / "js" / "dashboard" / "camera_state.js",
             REPO_ROOT / "static" / "js" / "dashboard" / "store.js",

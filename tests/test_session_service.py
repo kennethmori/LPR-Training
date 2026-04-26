@@ -352,6 +352,46 @@ class SessionServiceIntegrationTests(unittest.TestCase):
         unmatched_event_ids = {int(row["id"]) for row in unmatched_events}
         self.assertTrue(event_ids.issubset(unmatched_event_ids))
 
+    def test_concurrent_duplicate_entries_create_only_one_open_session(self) -> None:
+        storage_service, session_service = self._make_services(
+            cooldown_seconds=0,
+            store_unmatched_exit_events=True,
+        )
+        event_time = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        def _process(_index: int) -> dict[str, object]:
+            return session_service.process_recognition_event(
+                _build_event(
+                    timestamp=event_time,
+                    camera_role="entry",
+                    plate_number="RACE123",
+                )
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(_process, range(8)))
+
+        opened_results = [
+            result
+            for result in results
+            if result.get("event_action") == "session_opened"
+        ]
+        duplicate_results = [
+            result
+            for result in results
+            if result.get("event_action") == "ignored_duplicate"
+        ]
+
+        self.assertEqual(len(opened_results), 1)
+        self.assertEqual(len(duplicate_results), 7)
+
+        active_sessions = session_service.get_active_sessions(limit=20)
+        self.assertEqual(len(active_sessions), 1)
+        self.assertEqual(active_sessions[0]["plate_number"], "RACE123")
+
+        opened_events = storage_service.list_recent_events(limit=20, event_actions=("session_opened",))
+        self.assertEqual(len(opened_events), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

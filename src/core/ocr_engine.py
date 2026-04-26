@@ -11,6 +11,12 @@ from typing import Any
 import cv2
 import numpy as np
 
+from src.core.ocr_parsers import (
+    parse_easyocr_output,
+    parse_paddle_legacy_output,
+    parse_paddle_predict_output,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -254,53 +260,16 @@ class PlateOCREngine:
         return {"raw_text": raw_text, "confidence": float(confidence), "engine": self.mode}
 
     def _parse_paddle_predict_output(self, result: Any) -> tuple[list[str], list[float]]:
-        texts: list[str] = []
-        scores: list[float] = []
-
-        if isinstance(result, list):
-            for item in result:
-                payload = item
-                if hasattr(item, "res"):
-                    payload = getattr(item, "res")
-                if hasattr(item, "to_dict"):
-                    try:
-                        payload = item.to_dict()
-                    except (AttributeError, TypeError, ValueError, RuntimeError):
-                        self._log_throttled_exception(
-                            "paddleocr_result_to_dict",
-                            "PaddleOCR result to_dict conversion failed; using raw payload.",
-                        )
-                        payload = payload
-                if isinstance(item, dict):
-                    payload = item
-                if isinstance(payload, dict) and "res" in payload and isinstance(payload["res"], dict):
-                    payload = payload["res"]
-                if isinstance(payload, dict):
-                    rec_texts = payload.get("rec_texts") or []
-                    rec_scores = payload.get("rec_scores") or []
-                    if not rec_texts and payload.get("rec_text"):
-                        rec_texts = [payload["rec_text"]]
-                    if not rec_scores and payload.get("rec_score") is not None:
-                        rec_scores = [payload["rec_score"]]
-                    texts.extend([str(value) for value in rec_texts if value])
-                    scores.extend([float(value) for value in rec_scores])
-        return texts, scores
+        return parse_paddle_predict_output(
+            result,
+            log_to_dict_error=lambda: self._log_throttled_exception(
+                "paddleocr_result_to_dict",
+                "PaddleOCR result to_dict conversion failed; using raw payload.",
+            ),
+        )
 
     def _parse_paddle_legacy_output(self, result: Any) -> tuple[list[str], list[float]]:
-        texts: list[str] = []
-        scores: list[float] = []
-
-        if isinstance(result, list):
-            for group in result:
-                if not group:
-                    continue
-                for item in group:
-                    if len(item) < 2:
-                        continue
-                    text, score = item[1]
-                    texts.append(str(text))
-                    scores.append(float(score))
-        return texts, scores
+        return parse_paddle_legacy_output(result)
 
     def _read_with_easyocr(self, image: np.ndarray) -> dict[str, Any]:
         try:
@@ -309,8 +278,7 @@ class PlateOCREngine:
             self._log_throttled_exception("easyocr_read", "EasyOCR inference failed.")
             return {"raw_text": "", "confidence": 0.0, "engine": self.mode}
 
-        texts = [str(item[1]) for item in result if len(item) >= 3]
-        scores = [float(item[2]) for item in result if len(item) >= 3]
+        texts, scores = parse_easyocr_output(result)
         raw_text = "".join(texts).strip()
         confidence = max(scores) if scores else 0.0
         return {"raw_text": raw_text, "confidence": float(confidence), "engine": self.mode}

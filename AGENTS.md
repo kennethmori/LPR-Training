@@ -91,6 +91,19 @@ The backend should stay modular and contract-driven as the project grows. The go
 - When adding a new backend feature, decide its home first: core algorithm, orchestration service, storage layer, or route layer. If that ownership is unclear, stop and resolve it before coding.
 - If a route or service file crosses a clear readability threshold, tighten it with an extraction pass and add or update a guardrail test rather than just accepting the growth.
 
+## Refactor Guardrails
+
+Use these guardrails to keep future work from regressing back into monoliths.
+
+- Keep `src/app.py` as a composition root only.
+- Keep FastAPI route files below roughly 250 lines unless there is a strong reason.
+- Keep `static/js/app.js` below roughly 1000 lines, and do not add direct `document.querySelector`, `document.getElementById`, `document.querySelectorAll`, or `innerHTML` mutations there.
+- When a module grows because of a new feature, extract one clear responsibility before adding more logic to that module.
+- Prefer adding or updating architecture guardrail tests when splitting major route, service, frontend, or CSS responsibilities.
+- After architectural changes, run:
+  - `python -m compileall src scripts`
+  - `python -m unittest discover -s tests -p "test_*.py"`
+
 ## Testing Guidelines
 
 The repo includes an automated test suite under `tests/`.
