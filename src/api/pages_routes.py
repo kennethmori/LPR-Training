@@ -108,10 +108,10 @@ def register_page_routes(
         refresh_seconds = max(
             float(
                 refresh_seconds_value
-                or request.app.state.settings.get("app", {}).get("dashboard_refresh_seconds", 1.0)
-                or 1.0
+                if refresh_seconds_value is not None
+                else request.app.state.settings.get("app", {}).get("dashboard_refresh_seconds", 1.0)
             ),
-            0.2,
+            0.0,
         )
 
         async def event_generator():

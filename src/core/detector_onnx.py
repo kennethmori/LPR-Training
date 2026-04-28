@@ -237,8 +237,11 @@ def detect_with_onnxruntime(
     serialize_runs: bool,
     run_lock: Any,
     log_inference_error: Callable[[], None],
+    set_debug: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     if input_name is None:
+        if set_debug is not None:
+            set_debug({"reason": "onnx_input_missing"})
         return []
 
     input_size = max(int(settings.get("input_size", 640) or 640), 32)
@@ -252,12 +255,17 @@ def detect_with_onnxruntime(
             outputs = model.run(output_names, {input_name: tensor})
     except exception_types:
         log_inference_error()
+        if set_debug is not None:
+            set_debug({"reason": "onnx_inference_error", "input_size": input_size})
         return []
 
     predictions = extract_onnx_predictions(outputs)
     if predictions.size == 0:
+        if set_debug is not None:
+            set_debug({"reason": "empty_predictions", "input_size": input_size})
         return []
 
+    debug_payload = build_prediction_debug(predictions, settings=settings, input_size=input_size)
     if predictions.shape[1] in {6, 7}:
         detections = postprocess_onnx_nms_output(
             predictions=predictions,
@@ -279,7 +287,55 @@ def detect_with_onnxruntime(
 
     detections.sort(key=lambda item: item["confidence"], reverse=True)
     max_detections = max(int(settings.get("max_detections", 5) or 5), 1)
-    return detections[:max_detections]
+    kept_detections = detections[:max_detections]
+    if set_debug is not None:
+        debug_payload["kept_detections"] = len(kept_detections)
+        debug_payload["top_kept_confidence"] = (
+            round(float(kept_detections[0]["confidence"]), 6)
+            if kept_detections
+            else 0.0
+        )
+        set_debug(debug_payload)
+    return kept_detections
+
+
+def build_prediction_debug(
+    predictions: np.ndarray,
+    *,
+    settings: dict[str, Any],
+    input_size: int,
+) -> dict[str, Any]:
+    confidence_threshold = float(settings.get("confidence_threshold", 0.3))
+    debug: dict[str, Any] = {
+        "input_size": input_size,
+        "confidence_threshold": confidence_threshold,
+        "prediction_shape": [int(value) for value in predictions.shape],
+        "raw_predictions": int(predictions.shape[0]) if predictions.ndim == 2 else 0,
+        "top_raw_confidence": 0.0,
+        "candidates_above_threshold": 0,
+    }
+    if predictions.ndim != 2 or predictions.shape[0] == 0 or predictions.shape[1] <= 4:
+        return debug
+
+    if predictions.shape[1] in {6, 7}:
+        confidences = predictions[:, 4]
+    else:
+        class_scores = predictions[:, 4:]
+        if class_scores.size == 0:
+            return debug
+        confidences = class_scores.max(axis=1)
+
+    if confidences.size == 0:
+        return debug
+
+    top_index = int(confidences.argmax())
+    debug["top_raw_confidence"] = round(float(confidences[top_index]), 6)
+    debug["candidates_above_threshold"] = int((confidences >= confidence_threshold).sum())
+    if predictions.shape[1] not in {6, 7}:
+        debug["top_raw_class_index"] = int(predictions[top_index, 4:].argmax())
+    elif predictions.shape[1] > 5:
+        debug["top_raw_class_index"] = int(predictions[top_index, 5])
+    return debug
 
 
 def preprocess_for_onnx(image: np.ndarray, input_size: int) -> tuple[np.ndarray, float, int, int]:

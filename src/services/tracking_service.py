@@ -130,6 +130,7 @@ class PlateTrackingService:
                 pipeline_time_ms=pipeline_time_ms,
                 stable_result=self.latest_camera_stable_result,
             )
+            payload["detector_debug"] = dict(getattr(self.pipeline.detector, "last_debug", {}))
             if detector_ran and bool(self.pipeline.settings.get("log_no_detection_frames", False)):
                 self.pipeline.logging_service.append(
                     build_tracking_no_detection_log(
@@ -142,8 +143,7 @@ class PlateTrackingService:
                 )
             return payload, annotated, None
 
-        return (
-            build_success_payload(
+        payload = build_success_payload(
                 detector_mode=self.pipeline.detector.mode,
                 ocr_mode=self.pipeline.ocr_engine.mode,
                 camera_role=self.camera_role,
@@ -160,7 +160,10 @@ class PlateTrackingService:
                 ocr_time_ms=round(total_ocr_time_ms, 2),
                 pipeline_time_ms=pipeline_time_ms,
                 recognition_event=recognition_event,
-            ),
+        )
+        payload["detector_debug"] = dict(getattr(self.pipeline.detector, "last_debug", {}))
+        return (
+            payload,
             annotated,
             crop_image,
         )

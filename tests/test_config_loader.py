@@ -55,7 +55,7 @@ class ConfigLoaderTests(unittest.TestCase):
         config = AppConfig.from_dict(
             {
                 "cameras": {
-                    "entry": {"source": "0", "source_name": "entry_camera"},
+                    "entry": {"source": "0", "source_name": "entry_camera", "fps_sleep_seconds": 0.0},
                     "exit": {"source": "http://exit.local/video", "source_name": "exit_camera"},
                 }
             }
@@ -64,7 +64,14 @@ class ConfigLoaderTests(unittest.TestCase):
         camera_settings = build_camera_settings(config)
 
         self.assertEqual(camera_settings["entry"]["source"], 0)
+        self.assertEqual(camera_settings["entry"]["fps_sleep_seconds"], 0.0)
         self.assertEqual(camera_settings["exit"]["source"], "http://exit.local/video")
+
+    def test_zero_dashboard_refresh_seconds_is_preserved(self) -> None:
+        config = AppConfig.from_dict({"app": {"dashboard_refresh_seconds": 0.0}})
+
+        self.assertEqual(config.app.dashboard_refresh_seconds, 0.0)
+        self.assertEqual(config.to_dict()["app"]["dashboard_refresh_seconds"], 0.0)
 
     def test_build_auth_config_resolves_env_values(self) -> None:
         previous_username = os.environ.get("PLATE_TEST_ADMIN")

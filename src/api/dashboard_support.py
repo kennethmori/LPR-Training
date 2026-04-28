@@ -25,7 +25,11 @@ class DashboardPayloadCache:
 
     def get(self, request: Request, *, force_refresh: bool = False) -> dict[str, Any]:
         dashboard_settings = dict(request.app.state.settings.get("dashboard_stream", {}))
-        cache_ttl_seconds = max(float(dashboard_settings.get("cache_ttl_seconds", 0.5) or 0.5), 0.0)
+        configured_cache_ttl = dashboard_settings.get("cache_ttl_seconds", 0.5)
+        cache_ttl_seconds = max(
+            float(configured_cache_ttl if configured_cache_ttl is not None else 0.5),
+            0.0,
+        )
         now = time.perf_counter()
         if (
             not force_refresh

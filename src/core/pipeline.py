@@ -94,7 +94,8 @@ class LicensePlatePipeline:
                         stable_text=previous_stable["value"],
                         timings_ms=payload["timings_ms"],
                     )
-                )
+            )
+            payload["detector_debug"] = dict(getattr(self.detector, "last_debug", {}))
             return payload, frame.copy(), None
 
         best_detection = detections[0]
@@ -184,6 +185,7 @@ class LicensePlatePipeline:
             )
         )
 
+        payload["detector_debug"] = dict(getattr(self.detector, "last_debug", {}))
         return payload, annotated, resized_crop
 
     def _resolve_ocr_result(

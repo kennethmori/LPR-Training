@@ -14,6 +14,11 @@ def _merge_with_extras(payload: dict[str, Any], extras: dict[str, Any]) -> dict[
     return merged
 
 
+def _value_or_default(data: dict[str, Any], key: str, default: Any) -> Any:
+    value = data.get(key, default)
+    return default if value is None else value
+
+
 @dataclass(slots=True)
 class AppSection:
     title: str = ""
@@ -41,7 +46,7 @@ class AppSection:
             university=str(data.get("university", "") or ""),
             debug=bool(data.get("debug", False)),
             default_camera_role=str(data.get("default_camera_role", "entry") or "entry"),
-            dashboard_refresh_seconds=float(data.get("dashboard_refresh_seconds", 1.0) or 1.0),
+            dashboard_refresh_seconds=float(_value_or_default(data, "dashboard_refresh_seconds", 1.0)),
             extras={key: value for key, value in data.items() if key not in known},
         )
 
@@ -118,7 +123,7 @@ class CameraRoleSection:
             source_name=str(data.get("source_name", "") or ""),
             width=int(data.get("width", 1280) or 1280),
             height=int(data.get("height", 720) or 720),
-            fps_sleep_seconds=float(data.get("fps_sleep_seconds", 0.03) or 0.03),
+            fps_sleep_seconds=float(_value_or_default(data, "fps_sleep_seconds", 0.03)),
             extras={key: value for key, value in data.items() if key not in known},
         )
 

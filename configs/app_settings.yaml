@@ -4,7 +4,7 @@ app:
   university: University of Southern Mindanao
   debug: true
   default_camera_role: entry
-  dashboard_refresh_seconds: 0.25
+  dashboard_refresh_seconds: 0.0
 auth:
   enabled: true
   admin_username: admin
@@ -21,7 +21,7 @@ paths:
   performance_log_path: outputs/demo_logs/performance.jsonl
 detector:
   backend: onnxruntime
-  confidence_threshold: 0.6
+  confidence_threshold: 0.35
   iou_threshold: 0.4
   padding_ratio: 0.05
   max_detections: 1
@@ -89,7 +89,7 @@ tracking:
   match_center_distance_ratio: 0.6
   min_plate_width: 96
   min_plate_height: 24
-  min_detector_confidence_for_ocr: 0.7
+  min_detector_confidence_for_ocr: 0.45
   min_sharpness_for_ocr: 55.0
   ocr_cooldown_frames: 1
   ocr_cooldown_seconds: 0.0
@@ -98,9 +98,9 @@ tracking:
   recognition_event_min_stable_occurrences: 2
   tracker_backend: auto
 stream:
-  preview_max_width: 800
-  preview_max_height: 450
-  preview_jpeg_quality: 65
+  preview_max_width: 640
+  preview_max_height: 360
+  preview_jpeg_quality: 50
   stream_frame_interval_seconds: 0.01
   payload_emit_every_n_processed_frames: 1
   include_camera_annotated_base64: false
@@ -110,6 +110,8 @@ stream:
 performance:
   min_record_interval_seconds: 1.0
   max_recent_entries: 5000
+dashboard_stream:
+  cache_ttl_seconds: 0.0
 vehicle_registry:
   enabled: true
   recent_history_limit: 5
@@ -154,7 +156,7 @@ session:
   cooldown_seconds: 15
   allow_only_one_open_session_per_plate: true
   store_unmatched_exit_events: true
-  min_detector_confidence: 0.5
+  min_detector_confidence: 0.35
   min_ocr_confidence: 0.8
   min_stable_occurrences: 2
   ambiguity_window_seconds: 30
@@ -164,17 +166,17 @@ camera:
   source_name: phone_camera
   width: 1280
   height: 720
-  fps_sleep_seconds: 0.01
+  fps_sleep_seconds: 0.0
 cameras:
   entry:
     source: http://192.168.0.251:4747/video
     source_name: entry_phone
     width: 1280
     height: 720
-    fps_sleep_seconds: 0.01
+    fps_sleep_seconds: 0.0
   exit:
     source: null
     source_name: exit_phone
     width: 1280
     height: 720
-    fps_sleep_seconds: 0.01
+    fps_sleep_seconds: 0.0

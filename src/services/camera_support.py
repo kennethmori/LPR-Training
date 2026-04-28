@@ -39,6 +39,25 @@ def compute_fps(samples: deque[float]) -> float:
     return round((len(samples) - 1) / elapsed, 2)
 
 
+def measure_frame_quality(frame: Any) -> dict[str, Any]:
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    except FRAME_SHAPE_EXCEPTIONS + (cv2.error,):
+        return {
+            "brightness_mean": 0.0,
+            "sharpness_laplacian_var": 0.0,
+            "too_dark": True,
+        }
+
+    brightness = float(gray.mean())
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    return {
+        "brightness_mean": round(brightness, 2),
+        "sharpness_laplacian_var": round(sharpness, 2),
+        "too_dark": brightness < 25.0,
+    }
+
+
 def placeholder_frame():
     import numpy as np
 

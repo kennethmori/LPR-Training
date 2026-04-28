@@ -36,6 +36,13 @@ def tracker_factory(backend: str) -> Any | None:
             candidates.append(cv2.TrackerKCF_create)
         if normalized == "kcf" and not candidates:
             return None
+    if normalized in {"auto", "mosse"}:
+        if legacy is not None and hasattr(legacy, "TrackerMOSSE_create"):
+            candidates.append(legacy.TrackerMOSSE_create)
+        if hasattr(cv2, "TrackerMOSSE_create"):
+            candidates.append(cv2.TrackerMOSSE_create)
+        if normalized == "mosse" and not candidates:
+            return None
     if normalized in {"none", "disabled"}:
         return None
 

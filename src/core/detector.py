@@ -47,6 +47,7 @@ class PlateDetector:
         self.onnx_output_names: list[str] | None = None
         self.onnx_available_providers: list[str] = []
         self.onnx_active_providers: list[str] = []
+        self.last_debug: dict[str, Any] = {}
         self._onnx_exception_types: tuple[type[BaseException], ...] = DEFAULT_ONNX_EXCEPTION_TYPES
         self._onnx_run_lock = Lock()
         self._serialize_onnx_runs = False
@@ -134,6 +135,7 @@ class PlateDetector:
 
     def detect(self, image: np.ndarray) -> list[dict[str, Any]]:
         if not self.ready or self.model is None:
+            self.last_debug = {"reason": "detector_unavailable", "mode": self.mode}
             return []
 
         if self.backend == "onnxruntime":
@@ -153,6 +155,7 @@ class PlateDetector:
             exception_types=self._onnx_exception_types,
             serialize_runs=self._serialize_onnx_runs,
             run_lock=self._onnx_run_lock,
+            set_debug=lambda value: setattr(self, "last_debug", value),
             log_inference_error=lambda: self._log_throttled_exception(
                 "onnx_inference",
                 "ONNX detector inference failed.",

@@ -14,6 +14,7 @@ from src.services.camera_support import (
     encode_preview_frame,
     mark_frame,
     mark_processed,
+    measure_frame_quality,
     tracking_active,
     update_tracked_detection,
 )
@@ -55,6 +56,7 @@ class CameraService:
         self.stop_event = threading.Event()
         self.stats_lock = threading.Lock()
         self.running = False
+        self.stopping = False
         self.latest_frame_bytes: bytes | None = None
         self.latest_payload: dict[str, Any] | None = None
         self.latest_detected_payload: dict[str, Any] | None = None
@@ -69,10 +71,16 @@ class CameraService:
         self.processed_payload_count = 0
         self.tracked_detection: dict[str, Any] | None = None
         self.last_start_error: str | None = None
+        self.latest_loop_timings_ms: dict[str, float] = {}
+        self.latest_payload_attach_ms = 0.0
+        self.latest_frame_quality: dict[str, Any] = {}
         self.tracking_enabled = bool(getattr(self.tracker_service, "enabled", False))
 
     def start(self) -> bool:
-        if self.running:
+        if self.thread and self.thread.is_alive():
+            if self.stopping:
+                self.last_start_error = "camera_stop_pending"
+                return False
             self.last_start_error = None
             return True
 
@@ -83,6 +91,7 @@ class CameraService:
 
         self.stop_event.clear()
         self._reset_stats()
+        self.stopping = False
         self.last_start_error = None
         self.thread = threading.Thread(target=self._loop, daemon=True)
         self.running = True
@@ -91,12 +100,19 @@ class CameraService:
 
     def stop(self) -> None:
         self.stop_event.set()
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
-        if self.capture is not None:
-            release_camera_capture(self.capture)
-            self.capture = None
+        self.stopping = True
+        thread = self.thread
+        if thread and thread.is_alive():
+            stop_timeout = max(float(self.settings.get("stop_join_timeout_seconds", 1.0) or 1.0), 0.0)
+            thread.join(timeout=stop_timeout)
+        if thread and thread.is_alive():
+            self.last_start_error = "camera_stop_pending"
+        else:
+            self.running = False
+            self.stopping = False
+            if self.capture is not None:
+                release_camera_capture(self.capture)
+                self.capture = None
         with self.stats_lock:
             self.frame_timestamps.clear()
             self.processed_timestamps.clear()
@@ -110,17 +126,29 @@ class CameraService:
         consecutive_runtime_errors = 0
         try:
             while not self.stop_event.is_set() and self.capture is not None:
+                loop_started = time.perf_counter()
+                read_time_ms = 0.0
+                process_time_ms = 0.0
+                preview_encode_time_ms = 0.0
                 try:
                     if not self.capture.isOpened():
                         self.last_start_error = "camera_stream_disconnected"
                         logger.error("Camera stream disconnected for role '%s'.", self.camera_role)
                         break
 
+                    read_started = time.perf_counter()
                     ok, frame = self.capture.read()
+                    read_time_ms = (time.perf_counter() - read_started) * 1000
                     if not ok:
                         consecutive_read_failures += 1
                         with self.stats_lock:
                             self.read_failures += 1
+                        self._set_loop_timings(
+                            read_time_ms=read_time_ms,
+                            process_time_ms=0.0,
+                            preview_encode_time_ms=0.0,
+                            loop_total_time_ms=(time.perf_counter() - loop_started) * 1000,
+                        )
                         if consecutive_read_failures >= max_consecutive_read_failures:
                             self.last_start_error = f"camera_stream_unavailable:{consecutive_read_failures}"
                             logger.error(
@@ -136,6 +164,7 @@ class CameraService:
 
                     self._mark_frame(frame)
 
+                    process_started = time.perf_counter()
                     if self.tracking_enabled and self.tracker_service is not None:
                         payload, annotated_frame = self._process_tracking_frame(frame, frame_index)
                     elif self.frames_until_process <= 0:
@@ -143,8 +172,17 @@ class CameraService:
                     else:
                         annotated_frame = self._annotate_tracked_frame(frame, frame_index)
                         self.frames_until_process -= 1
+                    process_time_ms = (time.perf_counter() - process_started) * 1000
 
+                    preview_encode_started = time.perf_counter()
                     self.latest_frame_bytes = encode_preview_frame(annotated_frame, self.settings)
+                    preview_encode_time_ms = (time.perf_counter() - preview_encode_started) * 1000
+                    self._set_loop_timings(
+                        read_time_ms=read_time_ms,
+                        process_time_ms=process_time_ms,
+                        preview_encode_time_ms=preview_encode_time_ms,
+                        loop_total_time_ms=(time.perf_counter() - loop_started) * 1000,
+                    )
                     consecutive_runtime_errors = 0
 
                     frame_index += 1
@@ -169,6 +207,7 @@ class CameraService:
                     continue
         finally:
             self.running = False
+            self.stopping = False
             if self.capture is not None:
                 release_camera_capture(self.capture)
                 self.capture = None
@@ -187,6 +226,9 @@ class CameraService:
         self.tracked_detection = None
         self.latest_payload = None
         self.latest_detected_payload = None
+        self.latest_loop_timings_ms = {}
+        self.latest_payload_attach_ms = 0.0
+        self.latest_frame_quality = {}
         if self.tracker_service is not None and hasattr(self.tracker_service, "reset"):
             self.tracker_service.reset()
 
@@ -194,6 +236,7 @@ class CameraService:
         return self.latest_payload
 
     def _mark_frame(self, frame: Any) -> None:
+        frame_quality = measure_frame_quality(frame)
         mark_frame(
             frame=frame,
             stats_lock=self.stats_lock,
@@ -201,6 +244,8 @@ class CameraService:
             set_latest_frame_shape=lambda value: setattr(self, "latest_frame_shape", value),
             set_last_frame_at=lambda value: setattr(self, "last_frame_at_iso", value),
         )
+        with self.stats_lock:
+            self.latest_frame_quality = frame_quality
 
     def _mark_processed(self) -> None:
         mark_processed(
@@ -208,6 +253,23 @@ class CameraService:
             processed_timestamps=self.processed_timestamps,
             set_last_processed_at=lambda value: setattr(self, "last_processed_at_iso", value),
         )
+
+    def _set_loop_timings(
+        self,
+        *,
+        read_time_ms: float,
+        process_time_ms: float,
+        preview_encode_time_ms: float,
+        loop_total_time_ms: float,
+    ) -> None:
+        with self.stats_lock:
+            self.latest_loop_timings_ms = {
+                "camera_read": round(read_time_ms, 2),
+                "process_frame": round(process_time_ms, 2),
+                "payload_attach": round(float(self.latest_payload_attach_ms), 2),
+                "preview_encode": round(preview_encode_time_ms, 2),
+                "loop_total": round(loop_total_time_ms, 2),
+            }
 
     def snapshot(self) -> dict[str, Any]:
         with self.stats_lock:
@@ -222,6 +284,7 @@ class CameraService:
                 "source_name": self.source_name,
                 "source_value": self.settings.get("source", self.settings.get("source_index", 0)),
                 "running": self.running,
+                "stopping": self.stopping,
                 "input_fps": compute_fps(self.frame_timestamps),
                 "processed_fps": compute_fps(self.processed_timestamps),
                 "read_failures": int(self.read_failures),
@@ -230,6 +293,8 @@ class CameraService:
                 "last_frame_at": self.last_frame_at_iso,
                 "last_processed_at": self.last_processed_at_iso,
                 "uptime_seconds": round(uptime_seconds, 1),
+                "loop_timings_ms": dict(self.latest_loop_timings_ms),
+                "frame_quality": dict(self.latest_frame_quality),
                 "process_every_n_frames": int(
                     self.settings.get(
                         "detector_every_n_frames",
@@ -297,6 +362,8 @@ class CameraService:
         )
         self._mark_processed()
         self.processed_payload_count += 1
+        payload_attach_started = time.perf_counter()
+        self._attach_frame_quality(payload)
         apply_camera_payload(
             pipeline=self.pipeline,
             settings=self.settings,
@@ -308,6 +375,7 @@ class CameraService:
             set_latest_payload=lambda value: setattr(self, "latest_payload", value),
             set_latest_detected_payload=lambda value: setattr(self, "latest_detected_payload", value),
         )
+        self.latest_payload_attach_ms = (time.perf_counter() - payload_attach_started) * 1000
         self._update_tracked_detection(payload, frame_index)
         if not payload.get("plate_detected"):
             annotated_frame = self._annotate_tracked_frame(frame, frame_index)
@@ -324,6 +392,8 @@ class CameraService:
         self._update_tracked_detection(payload, frame_index)
         self.frames_until_process = max(self._next_process_interval(frame_index) - 1, 0)
         self.processed_payload_count += 1
+        payload_attach_started = time.perf_counter()
+        self._attach_frame_quality(payload)
         apply_camera_payload(
             pipeline=self.pipeline,
             settings=self.settings,
@@ -335,4 +405,9 @@ class CameraService:
             set_latest_payload=lambda value: setattr(self, "latest_payload", value),
             set_latest_detected_payload=lambda value: setattr(self, "latest_detected_payload", value),
         )
+        self.latest_payload_attach_ms = (time.perf_counter() - payload_attach_started) * 1000
         return payload, annotated_frame
+
+    def _attach_frame_quality(self, payload: dict[str, Any]) -> None:
+        with self.stats_lock:
+            payload["frame_quality"] = dict(self.latest_frame_quality)
